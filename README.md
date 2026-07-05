@@ -1,46 +1,44 @@
-# ClaudeBridge CN
+# TimeLingo
 
-给中文 Claude 用户用的 Windows 小助手。
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-![主界面截图](assets/screenshot-main.png)
+A small Windows floating tool for world time and quick translation.
 
-## 功能
+![Main window](assets/screenshot-main.png)
 
-- 悬浮显示北京时间。
-- 默认优先中英互转，方便把中文想法发给 Claude。
-- 支持日文、韩文、西班牙文、法文、德文、俄文、葡萄牙文等常用方向。
-- 英文或其他语言转中文，方便把内容转给中文合伙人或客户看。
-- 支持置顶、系统托盘、开机自启、日间 / 夜间模式。
-- 支持 GitHub 在线更新。
+## Features
 
-## 适合谁
+- Floating clock with common time zone presets.
+- Quick translation between common languages.
+- App language switch: English / Simplified Chinese.
+- Default target language setting for auto translation.
+- Always on top, system tray, dark mode, and Windows auto start.
+- GitHub-based online update.
 
-适合电脑时区不在中国，但仍然需要看北京时间、用中文思考、用英文和 Claude 沟通的用户。中英互转是默认场景，其他常用语言可以在下拉框里手动选择。
+## Download
 
-## 下载
-
-下载一个 exe 就能用：
+Download one exe and run it:
 
 ```text
-ClaudeBridgeCN.exe
+TimeLingo.exe
 ```
 
-最新版本：
+Latest version:
 
 ```text
-https://github.com/qingchencloud/claude-bridge-cn/releases/latest/download/ClaudeBridgeCN.exe
+https://github.com/qingchencloud/time-lingo/releases/latest/download/TimeLingo.exe
 ```
 
-第一次打开会出现安装引导：
+The first launch shows a setup guide:
 
-- 想简单试用，点“直接使用”。
-- 想长期使用，点“安装并打开”。
+- Choose "Run once" to try it without installing.
+- Choose "Install" for daily use.
 
-## 说明
+## Notes
 
-默认使用公共在线翻译接口，适合日常轻量使用。公共接口慢或失败时，可以稍后重试。
+TimeLingo uses a public online translation endpoint by default. It is enough for light daily use, but it can be slow or rate-limited.
 
-长期稳定使用可以自己配置 Microsoft Translator 或 DeepL。
+For more stable use, configure Microsoft Translator or DeepL with environment variables.
 
 ## License
 

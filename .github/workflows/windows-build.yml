@@ -36,10 +36,12 @@ jobs:
       - name: Check exe
         shell: powershell
         run: |
-          $exe = "$PWD\dist\ClaudeBridgeCN.exe"
-          $legacyExe = "$PWD\dist\BeijingClaudeTranslator.exe"
+          $exe = "$PWD\dist\TimeLingo.exe"
+          $legacyExe = "$PWD\dist\ClaudeBridgeCN.exe"
+          $veryLegacyExe = "$PWD\dist\BeijingClaudeTranslator.exe"
           if (-not (Test-Path $exe)) { throw "Missing exe." }
           Copy-Item $exe $legacyExe -Force
+          Copy-Item $exe $veryLegacyExe -Force
           & $exe --smoke
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe)
@@ -49,8 +51,9 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
-          name: ClaudeBridgeCN
+          name: TimeLingo
           path: |
+            dist/TimeLingo.exe
             dist/ClaudeBridgeCN.exe
             dist/BeijingClaudeTranslator.exe
 
@@ -59,5 +62,6 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: |
+            dist/TimeLingo.exe
             dist/ClaudeBridgeCN.exe
             dist/BeijingClaudeTranslator.exe

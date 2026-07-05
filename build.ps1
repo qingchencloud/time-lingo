@@ -20,8 +20,9 @@ if (-not (Test-Path -LiteralPath $csc)) {
 
 $source = Join-Path $repo "src\BeijingClaudeTranslator\Program.cs"
 $icon = Join-Path $repo "beijing-translator.ico"
-$exe = Join-Path $OutputDir "ClaudeBridgeCN.exe"
-$legacyExe = Join-Path $OutputDir "BeijingClaudeTranslator.exe"
+$exe = Join-Path $OutputDir "TimeLingo.exe"
+$legacyExe = Join-Path $OutputDir "ClaudeBridgeCN.exe"
+$veryLegacyExe = Join-Path $OutputDir "BeijingClaudeTranslator.exe"
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
@@ -44,5 +45,6 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Copy-Item -LiteralPath $exe -Destination $legacyExe -Force
+Copy-Item -LiteralPath $exe -Destination $veryLegacyExe -Force
 
 Get-Item -LiteralPath $exe

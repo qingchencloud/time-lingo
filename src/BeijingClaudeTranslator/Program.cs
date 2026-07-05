@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Reflection;
@@ -15,29 +16,30 @@ using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
-[assembly: AssemblyTitle("ClaudeBridge CN")]
-[assembly: AssemblyProduct("ClaudeBridge CN")]
+[assembly: AssemblyTitle("TimeLingo")]
+[assembly: AssemblyProduct("TimeLingo")]
 [assembly: AssemblyCompany("QingChen Cloud")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 QingChen Cloud")]
-[assembly: AssemblyVersion("0.4.1.0")]
-[assembly: AssemblyFileVersion("0.4.1.0")]
+[assembly: AssemblyVersion("0.5.0.0")]
+[assembly: AssemblyFileVersion("0.5.0.0")]
 
 namespace BeijingClaudeTranslator
 {
     internal static class AppInfo
     {
-        public const string ProductName = "ClaudeBridge CN";
-        public const string ChineseName = "Claude 中文桥";
-        public const string Version = "0.4.1";
+        public const string ProductName = "TimeLingo";
+        public const string ChineseName = "TimeLingo";
+        public const string Version = "0.5.0";
         public const string Owner = "qingchencloud";
-        public const string Repo = "claude-bridge-cn";
-        public const string RepoUrl = "https://github.com/qingchencloud/claude-bridge-cn";
-        public const string LatestReleaseApi = "https://api.github.com/repos/qingchencloud/claude-bridge-cn/releases/latest";
-        public const string AssetName = "ClaudeBridgeCN.exe";
-        public const string LegacyAssetName = "BeijingClaudeTranslator.exe";
+        public const string Repo = "time-lingo";
+        public const string RepoUrl = "https://github.com/qingchencloud/time-lingo";
+        public const string LatestReleaseApi = "https://api.github.com/repos/qingchencloud/time-lingo/releases/latest";
+        public const string AssetName = "TimeLingo.exe";
+        public const string LegacyAssetName = "ClaudeBridgeCN.exe";
+        public const string VeryLegacyAssetName = "BeijingClaudeTranslator.exe";
         public const string MutexName = "Local\\BeijingClaudeTranslator.SingleInstance";
 
-        public static readonly string[] ReleaseAssetNames = { AssetName, LegacyAssetName };
+        public static readonly string[] ReleaseAssetNames = { AssetName, LegacyAssetName, VeryLegacyAssetName };
     }
 
     internal static class Program
@@ -46,6 +48,7 @@ namespace BeijingClaudeTranslator
         private static void Main(string[] args)
         {
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+            AppSettings.Load();
             if (args.Length > 0 && args[0].Equals("--smoke", StringComparison.OrdinalIgnoreCase))
             {
                 string input = "cd D:\\Test\r\ngit status --short";
@@ -55,7 +58,7 @@ namespace BeijingClaudeTranslator
                     Console.Error.WriteLine("Smoke test failed.");
                     Environment.Exit(2);
                 }
-                foreach (object item in Translator.GetDirectionNames())
+                foreach (object item in Translator.GetDirectionOptions())
                 {
                     string direction = Convert.ToString(item);
                     string directionOutput = Translator.Translate(input, direction);
@@ -116,23 +119,27 @@ namespace BeijingClaudeTranslator
         private readonly TableLayoutPanel toolbar;
         private readonly Label timeLabel;
         private readonly Label dateLabel;
-        private readonly Label endpointLabel;
         private readonly Label inputLabel;
         private readonly Label outputLabel;
         private readonly Label statusLabel;
+        private readonly ComboBox timeZoneBox;
         private readonly ComboBox directionBox;
         private readonly TextBox inputBox;
         private readonly TextBox outputBox;
         private readonly Button translateButton;
         private readonly Button copyButton;
         private readonly Button clearButton;
-        private readonly Button aboutButton;
+        private readonly Button settingsButton;
         private readonly CheckBox topMostCheck;
         private readonly CheckBox trayCheck;
         private readonly CheckBox themeCheck;
         private readonly CheckBox autoStartCheck;
         private readonly NotifyIcon notifyIcon;
         private readonly ContextMenuStrip trayMenu;
+        private readonly ToolStripMenuItem showTrayItem;
+        private readonly ToolStripMenuItem settingsTrayItem;
+        private readonly ToolStripMenuItem aboutTrayItem;
+        private readonly ToolStripMenuItem exitTrayItem;
         private readonly System.Windows.Forms.Timer clockTimer;
         private readonly Icon appIcon;
 
@@ -142,7 +149,7 @@ namespace BeijingClaudeTranslator
 
         public MainForm()
         {
-            Text = AppInfo.ChineseName;
+            Text = AppInfo.ProductName;
             Size = new Size(520, 540);
             MinimumSize = new Size(500, 480);
             StartPosition = FormStartPosition.Manual;
@@ -178,9 +185,14 @@ namespace BeijingClaudeTranslator
             header.RowStyles.Add(new RowStyle(SizeType.Percent, 36));
 
             timeLabel = NewLabel("", 22f, FontStyle.Bold);
-            dateLabel = NewLabel("北京时间 UTC+8", 9f, FontStyle.Regular);
-            endpointLabel = NewLabel("在线翻译接口", 8f, FontStyle.Regular);
-            endpointLabel.TextAlign = ContentAlignment.MiddleRight;
+            dateLabel = NewLabel("", 9f, FontStyle.Regular);
+            timeZoneBox = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Dock = DockStyle.Fill,
+                Font = UiFont(8.5f),
+                Margin = new Padding(8, 1, 0, 1)
+            };
 
             switchPanel = new FlowLayoutPanel
             {
@@ -200,7 +212,7 @@ namespace BeijingClaudeTranslator
             header.Controls.Add(timeLabel, 0, 0);
             header.Controls.Add(switchPanel, 1, 0);
             header.Controls.Add(dateLabel, 0, 1);
-            header.Controls.Add(endpointLabel, 1, 1);
+            header.Controls.Add(timeZoneBox, 1, 1);
             layout.Controls.Add(header, 0, 0);
 
             toolbar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 1 };
@@ -217,18 +229,18 @@ namespace BeijingClaudeTranslator
                 Font = UiFont(9f),
                 Margin = new Padding(0, 4, 8, 4)
             };
-            directionBox.Items.AddRange(Translator.GetDirectionNames());
+            directionBox.Items.AddRange(Translator.GetDirectionOptions());
             directionBox.SelectedIndex = 0;
 
             translateButton = NewButton("开始翻译");
             copyButton = NewButton("复制结果");
             clearButton = NewButton("清空");
-            aboutButton = NewButton("关于");
+            settingsButton = NewButton("设置");
             toolbar.Controls.Add(directionBox, 0, 0);
             toolbar.Controls.Add(translateButton, 1, 0);
             toolbar.Controls.Add(copyButton, 2, 0);
             toolbar.Controls.Add(clearButton, 3, 0);
-            toolbar.Controls.Add(aboutButton, 4, 0);
+            toolbar.Controls.Add(settingsButton, 4, 0);
             layout.Controls.Add(toolbar, 0, 1);
 
             inputLabel = NewLabel("输入内容", 9f, FontStyle.Bold);
@@ -264,10 +276,12 @@ namespace BeijingClaudeTranslator
             layout.Controls.Add(statusLabel, 0, 6);
 
             trayMenu = new ContextMenuStrip();
-            ToolStripMenuItem showTrayItem = new ToolStripMenuItem("显示");
-            ToolStripMenuItem aboutTrayItem = new ToolStripMenuItem("关于 / 更新");
-            ToolStripMenuItem exitTrayItem = new ToolStripMenuItem("退出");
+            showTrayItem = new ToolStripMenuItem("显示");
+            settingsTrayItem = new ToolStripMenuItem("设置");
+            aboutTrayItem = new ToolStripMenuItem("关于 / 更新");
+            exitTrayItem = new ToolStripMenuItem("退出");
             trayMenu.Items.Add(showTrayItem);
+            trayMenu.Items.Add(settingsTrayItem);
             trayMenu.Items.Add(aboutTrayItem);
             trayMenu.Items.Add(exitTrayItem);
 
@@ -284,6 +298,7 @@ namespace BeijingClaudeTranslator
             clockTimer.Start();
 
             showTrayItem.Click += delegate { ShowMainWindow(); };
+            settingsTrayItem.Click += delegate { ShowSettings(); };
             aboutTrayItem.Click += delegate { ShowAbout(); };
             notifyIcon.DoubleClick += delegate { ShowMainWindow(); };
             exitTrayItem.Click += delegate
@@ -301,21 +316,22 @@ namespace BeijingClaudeTranslator
                 ApplyTheme();
             };
             autoStartCheck.CheckedChanged += delegate { ToggleAutoStart(); };
-            aboutButton.Click += delegate { ShowAbout(); };
+            timeZoneBox.SelectedIndexChanged += delegate { SaveSelectedTimeZone(); };
+            settingsButton.Click += delegate { ShowSettings(); };
             translateButton.Click += async delegate { await TranslateFromUiAsync(); };
             copyButton.Click += delegate
             {
                 if (!string.IsNullOrWhiteSpace(outputBox.Text))
                 {
                     Clipboard.SetText(outputBox.Text);
-                    SetStatus("已复制到剪贴板。", false);
+                    SetStatus(I18n.Text("已复制到剪贴板。", "Copied."), false);
                 }
             };
             clearButton.Click += delegate
             {
                 inputBox.Clear();
                 outputBox.Clear();
-                SetStatus("准备好了。", false);
+                SetStatus(I18n.Text("准备好了。", "Ready."), false);
             };
 
             FormClosing += OnFormClosing;
@@ -327,6 +343,9 @@ namespace BeijingClaudeTranslator
             };
             Shown += delegate
             {
+                ReloadTimeZoneOptions();
+                ReloadDirectionOptions();
+                ApplyUiLanguage();
                 UpdateClock();
                 ApplyTheme();
                 Activate();
@@ -339,23 +358,23 @@ namespace BeijingClaudeTranslator
             string text = inputBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(text))
             {
-                SetStatus("先输入内容。", true);
+                SetStatus(I18n.Text("先输入内容。", "Enter something first."), true);
                 return;
             }
 
             SetBusy(true);
-            SetStatus("翻译中...", false);
+            SetStatus(I18n.Text("翻译中...", "Translating..."), false);
 
             try
             {
-                string direction = Convert.ToString(directionBox.SelectedItem);
+                object direction = directionBox.SelectedItem;
                 string result = await Task.Run(delegate { return Translator.Translate(text, direction); });
                 outputBox.Text = result;
-                SetStatus("好了，可以复制。", false);
+                SetStatus(I18n.Text("好了，可以复制。", "Done. You can copy it."), false);
             }
             catch (Exception ex)
             {
-                SetStatus("没翻成，稍后再试。详情：" + ex.Message, true);
+                SetStatus(I18n.Text("没翻成，稍后再试。详情：", "Translation failed. Details: ") + ex.Message, true);
             }
             finally
             {
@@ -370,11 +389,11 @@ namespace BeijingClaudeTranslator
             try
             {
                 AutoStart.SetEnabled(autoStartCheck.Checked);
-                SetStatus(autoStartCheck.Checked ? "开机自启已开启。" : "开机自启已关闭。", false);
+                SetStatus(autoStartCheck.Checked ? I18n.Text("开机自启已开启。", "Auto start is on.") : I18n.Text("开机自启已关闭。", "Auto start is off."), false);
             }
             catch (Exception ex)
             {
-                SetStatus("自启设置失败：" + ex.Message, true);
+                SetStatus(I18n.Text("自启设置失败：", "Auto start failed: ") + ex.Message, true);
                 updatingAutoStart = true;
                 autoStartCheck.Checked = AutoStart.IsEnabled();
                 updatingAutoStart = false;
@@ -388,7 +407,7 @@ namespace BeijingClaudeTranslator
                 e.Cancel = true;
                 Hide();
                 notifyIcon.Visible = true;
-                notifyIcon.ShowBalloonTip(1200, AppInfo.ChineseName, "已到托盘，右键可退出。", ToolTipIcon.Info);
+                notifyIcon.ShowBalloonTip(1200, AppInfo.ProductName, I18n.Text("已到托盘，右键可退出。", "Still running in the tray. Right-click to exit."), ToolTipIcon.Info);
             }
         }
 
@@ -408,6 +427,91 @@ namespace BeijingClaudeTranslator
             }
         }
 
+        private void ShowSettings()
+        {
+            ShowMainWindow();
+            using (SettingsForm settings = new SettingsForm(appIcon))
+            {
+                if (settings.ShowDialog(this) == DialogResult.OK)
+                {
+                    ApplyUiLanguage();
+                    ReloadDirectionOptions();
+                    ReloadTimeZoneOptions();
+                    UpdateClock();
+                    ApplyTheme();
+                    SetStatus(I18n.Text("设置已保存。", "Settings saved."), false);
+                }
+            }
+        }
+
+        private void ApplyUiLanguage()
+        {
+            Text = AppInfo.ProductName;
+            inputLabel.Text = I18n.Text("输入内容", "Input");
+            outputLabel.Text = I18n.Text("翻译结果", "Result");
+            translateButton.Text = I18n.Text("开始翻译", "Translate");
+            copyButton.Text = I18n.Text("复制结果", "Copy");
+            clearButton.Text = I18n.Text("清空", "Clear");
+            settingsButton.Text = I18n.Text("设置", "Settings");
+            topMostCheck.Text = I18n.Text("置顶", "Top");
+            trayCheck.Text = I18n.Text("托盘", "Tray");
+            themeCheck.Text = I18n.Text("夜间", "Dark");
+            autoStartCheck.Text = I18n.Text("自启", "Startup");
+            showTrayItem.Text = I18n.Text("显示", "Show");
+            settingsTrayItem.Text = I18n.Text("设置", "Settings");
+            aboutTrayItem.Text = I18n.Text("关于 / 更新", "About / Update");
+            exitTrayItem.Text = I18n.Text("退出", "Exit");
+            if (statusLabel.Text == "准备好了。" || statusLabel.Text == "Ready.")
+            {
+                SetStatus(I18n.Text("准备好了。", "Ready."), false);
+            }
+        }
+
+        private void ReloadDirectionOptions()
+        {
+            object selected = directionBox.SelectedItem;
+            string selectedKey = selected is DirectionOption ? ((DirectionOption)selected).Key : "auto";
+
+            directionBox.Items.Clear();
+            directionBox.Items.AddRange(Translator.GetDirectionOptions());
+            for (int i = 0; i < directionBox.Items.Count; i++)
+            {
+                DirectionOption option = directionBox.Items[i] as DirectionOption;
+                if (option != null && option.Key == selectedKey)
+                {
+                    directionBox.SelectedIndex = i;
+                    return;
+                }
+            }
+            if (directionBox.Items.Count > 0) directionBox.SelectedIndex = 0;
+        }
+
+        private void ReloadTimeZoneOptions()
+        {
+            string selectedKey = AppSettings.TimeZoneKey;
+            timeZoneBox.Items.Clear();
+            timeZoneBox.Items.AddRange(TimeZonePreset.GetAll());
+            for (int i = 0; i < timeZoneBox.Items.Count; i++)
+            {
+                TimeZonePreset preset = timeZoneBox.Items[i] as TimeZonePreset;
+                if (preset != null && preset.Key == selectedKey)
+                {
+                    timeZoneBox.SelectedIndex = i;
+                    return;
+                }
+            }
+            if (timeZoneBox.Items.Count > 0) timeZoneBox.SelectedIndex = 0;
+        }
+
+        private void SaveSelectedTimeZone()
+        {
+            TimeZonePreset preset = timeZoneBox.SelectedItem as TimeZonePreset;
+            if (preset == null) return;
+            AppSettings.TimeZoneKey = preset.Key;
+            AppSettings.Save();
+            UpdateClock();
+        }
+
         private void SetBusy(bool busy)
         {
             translateButton.Enabled = !busy;
@@ -424,21 +528,22 @@ namespace BeijingClaudeTranslator
 
         private void UpdateClock()
         {
-            DateTime now = GetBeijingNow();
+            TimeZonePreset preset = TimeZonePreset.Find(AppSettings.TimeZoneKey);
+            DateTime now = GetSelectedTimeNow(preset);
             timeLabel.Text = now.ToString("HH:mm:ss");
-            dateLabel.Text = "北京时间 UTC+8  " + now.ToString("yyyy-MM-dd ddd");
+            dateLabel.Text = preset.DisplayName + "  " + now.ToString("yyyy-MM-dd ddd");
         }
 
-        private DateTime GetBeijingNow()
+        private DateTime GetSelectedTimeNow(TimeZonePreset preset)
         {
             try
             {
-                TimeZoneInfo zone = TimeZoneInfo.FindSystemTimeZoneById("China Standard Time");
+                TimeZoneInfo zone = TimeZoneInfo.FindSystemTimeZoneById(preset.WindowsId);
                 return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone);
             }
             catch
             {
-                return DateTime.UtcNow.AddHours(8);
+                return DateTime.UtcNow.AddHours(preset.FallbackOffsetHours);
             }
         }
 
@@ -463,7 +568,7 @@ namespace BeijingClaudeTranslator
                 label.BackColor = background;
             }
 
-            foreach (Label label in new[] { endpointLabel, statusLabel })
+            foreach (Label label in new[] { statusLabel })
             {
                 label.ForeColor = muted;
                 label.BackColor = background;
@@ -477,6 +582,8 @@ namespace BeijingClaudeTranslator
 
             directionBox.BackColor = surface;
             directionBox.ForeColor = text;
+            timeZoneBox.BackColor = surface;
+            timeZoneBox.ForeColor = text;
             inputBox.BackColor = surface;
             inputBox.ForeColor = text;
             outputBox.BackColor = surfaceAlt;
@@ -485,7 +592,7 @@ namespace BeijingClaudeTranslator
             SetButtonTheme(translateButton, true);
             SetButtonTheme(copyButton, false);
             SetButtonTheme(clearButton, false);
-            SetButtonTheme(aboutButton, false);
+            SetButtonTheme(settingsButton, false);
         }
 
         private Label NewLabel(string text, float size, FontStyle style)
@@ -642,35 +749,241 @@ namespace BeijingClaudeTranslator
         }
     }
 
+    internal static class I18n
+    {
+        public static bool IsChinese
+        {
+            get { return AppSettings.UiLanguage == "zh-CN"; }
+        }
+
+        public static string Text(string zh, string en)
+        {
+            return IsChinese ? zh : en;
+        }
+    }
+
+    internal static class AppSettings
+    {
+        public static string UiLanguage = DetectDefaultLanguage();
+        public static string TimeZoneKey = "beijing";
+        public static string DefaultTargetLanguageKey = "en";
+
+        public static void Load()
+        {
+            string path = GetSettingsPath();
+            if (!File.Exists(path)) return;
+
+            foreach (string line in File.ReadAllLines(path, Encoding.UTF8))
+            {
+                int index = line.IndexOf('=');
+                if (index <= 0) continue;
+                string key = line.Substring(0, index).Trim();
+                string value = line.Substring(index + 1).Trim();
+                if (key == "ui_language") UiLanguage = value;
+                if (key == "time_zone") TimeZoneKey = value;
+                if (key == "default_target_language") DefaultTargetLanguageKey = value;
+            }
+
+            if (LanguageInfo.Find(DefaultTargetLanguageKey) == null) DefaultTargetLanguageKey = "en";
+            if (TimeZonePreset.Find(TimeZoneKey) == null) TimeZoneKey = "beijing";
+            if (UiLanguage != "zh-CN" && UiLanguage != "en-US") UiLanguage = DetectDefaultLanguage();
+        }
+
+        public static void Save()
+        {
+            string path = GetSettingsPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            string content =
+                "ui_language=" + UiLanguage + "\r\n" +
+                "time_zone=" + TimeZoneKey + "\r\n" +
+                "default_target_language=" + DefaultTargetLanguageKey + "\r\n";
+            File.WriteAllText(path, content, Encoding.UTF8);
+        }
+
+        private static string GetSettingsPath()
+        {
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TimeLingo");
+            return Path.Combine(dir, "settings.ini");
+        }
+
+        private static string DetectDefaultLanguage()
+        {
+            return CultureInfo.CurrentUICulture.Name.StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? "zh-CN" : "en-US";
+        }
+    }
+
+    internal sealed class TimeZonePreset
+    {
+        public readonly string Key;
+        public readonly string WindowsId;
+        public readonly double FallbackOffsetHours;
+        private readonly string zhName;
+        private readonly string enName;
+
+        public TimeZonePreset(string key, string windowsId, double fallbackOffsetHours, string zhName, string enName)
+        {
+            Key = key;
+            WindowsId = windowsId;
+            FallbackOffsetHours = fallbackOffsetHours;
+            this.zhName = zhName;
+            this.enName = enName;
+        }
+
+        public string DisplayName
+        {
+            get { return I18n.IsChinese ? zhName : enName; }
+        }
+
+        public override string ToString()
+        {
+            return DisplayName;
+        }
+
+        public static TimeZonePreset[] GetAll()
+        {
+            return new[]
+            {
+                new TimeZonePreset("beijing", "China Standard Time", 8, "北京 UTC+8", "Beijing UTC+8"),
+                new TimeZonePreset("utc", "UTC", 0, "UTC 世界标准时间", "UTC"),
+                new TimeZonePreset("pacific", "Pacific Standard Time", -8, "美国太平洋时间", "US Pacific"),
+                new TimeZonePreset("eastern", "Eastern Standard Time", -5, "美国东部时间", "US Eastern"),
+                new TimeZonePreset("london", "GMT Standard Time", 0, "伦敦时间", "London"),
+                new TimeZonePreset("berlin", "W. Europe Standard Time", 1, "柏林 / 巴黎时间", "Berlin / Paris"),
+                new TimeZonePreset("tokyo", "Tokyo Standard Time", 9, "东京时间", "Tokyo"),
+                new TimeZonePreset("seoul", "Korea Standard Time", 9, "首尔时间", "Seoul"),
+                new TimeZonePreset("singapore", "Singapore Standard Time", 8, "新加坡时间", "Singapore"),
+                new TimeZonePreset("dubai", "Arabian Standard Time", 4, "迪拜时间", "Dubai"),
+                new TimeZonePreset("sydney", "AUS Eastern Standard Time", 10, "悉尼时间", "Sydney")
+            };
+        }
+
+        public static TimeZonePreset Find(string key)
+        {
+            foreach (TimeZonePreset preset in GetAll())
+            {
+                if (preset.Key == key) return preset;
+            }
+            return GetAll()[0];
+        }
+    }
+
+    internal sealed class LanguageInfo
+    {
+        public readonly string Key;
+        public readonly string MyMemoryCode;
+        public readonly string MicrosoftCode;
+        public readonly string DeepLSourceCode;
+        public readonly string DeepLTargetCode;
+        private readonly string zhName;
+        private readonly string enName;
+
+        public LanguageInfo(string key, string myMemoryCode, string microsoftCode, string deepLSourceCode, string deepLTargetCode, string zhName, string enName)
+        {
+            Key = key;
+            MyMemoryCode = myMemoryCode;
+            MicrosoftCode = microsoftCode;
+            DeepLSourceCode = deepLSourceCode;
+            DeepLTargetCode = deepLTargetCode;
+            this.zhName = zhName;
+            this.enName = enName;
+        }
+
+        public string DisplayName
+        {
+            get { return I18n.IsChinese ? zhName : enName; }
+        }
+
+        public override string ToString()
+        {
+            return DisplayName;
+        }
+
+        public static LanguageInfo[] GetAll()
+        {
+            return new[]
+            {
+                new LanguageInfo("zh", "zh-CN", "zh-Hans", "ZH", "ZH-HANS", "中文", "Chinese"),
+                new LanguageInfo("en", "en", "en", "EN", "EN-US", "英文", "English"),
+                new LanguageInfo("ja", "ja", "ja", "JA", "JA", "日文", "Japanese"),
+                new LanguageInfo("ko", "ko", "ko", "KO", "KO", "韩文", "Korean"),
+                new LanguageInfo("es", "es", "es", "ES", "ES", "西班牙文", "Spanish"),
+                new LanguageInfo("fr", "fr", "fr", "FR", "FR", "法文", "French"),
+                new LanguageInfo("de", "de", "de", "DE", "DE", "德文", "German"),
+                new LanguageInfo("ru", "ru", "ru", "RU", "RU", "俄文", "Russian"),
+                new LanguageInfo("pt", "pt", "pt", "PT", "PT-PT", "葡萄牙文", "Portuguese")
+            };
+        }
+
+        public static LanguageInfo Find(string key)
+        {
+            foreach (LanguageInfo language in GetAll())
+            {
+                if (language.Key == key) return language;
+            }
+            return null;
+        }
+    }
+
+    internal sealed class DirectionOption
+    {
+        public readonly string Key;
+        public readonly string SourceKey;
+        public readonly string TargetKey;
+
+        public DirectionOption(string key, string sourceKey, string targetKey)
+        {
+            Key = key;
+            SourceKey = sourceKey;
+            TargetKey = targetKey;
+        }
+
+        public bool IsAuto
+        {
+            get { return Key == "auto"; }
+        }
+
+        public override string ToString()
+        {
+            if (IsAuto) return I18n.Text("自动判断", "Auto detect");
+            LanguageInfo source = LanguageInfo.Find(SourceKey);
+            LanguageInfo target = LanguageInfo.Find(TargetKey);
+            return source.DisplayName + " -> " + target.DisplayName;
+        }
+    }
+
     internal static class Translator
     {
         private const int MaxChunkLength = 260;
 
-        public static object[] GetDirectionNames()
+        public static object[] GetDirectionOptions()
         {
             return new object[]
             {
-                "自动判断",
-                "中文 → 英文",
-                "英文 → 中文",
-                "中文 → 日文",
-                "日文 → 中文",
-                "中文 → 韩文",
-                "韩文 → 中文",
-                "中文 → 西班牙文",
-                "西班牙文 → 中文",
-                "中文 → 法文",
-                "法文 → 中文",
-                "中文 → 德文",
-                "德文 → 中文",
-                "中文 → 俄文",
-                "俄文 → 中文",
-                "中文 → 葡萄牙文",
-                "葡萄牙文 → 中文"
+                new DirectionOption("auto", "", ""),
+                new DirectionOption("zh-en", "zh", "en"),
+                new DirectionOption("en-zh", "en", "zh"),
+                new DirectionOption("en-ja", "en", "ja"),
+                new DirectionOption("ja-en", "ja", "en"),
+                new DirectionOption("en-ko", "en", "ko"),
+                new DirectionOption("ko-en", "ko", "en"),
+                new DirectionOption("en-es", "en", "es"),
+                new DirectionOption("es-en", "es", "en"),
+                new DirectionOption("en-fr", "en", "fr"),
+                new DirectionOption("fr-en", "fr", "en"),
+                new DirectionOption("en-de", "en", "de"),
+                new DirectionOption("de-en", "de", "en"),
+                new DirectionOption("en-ru", "en", "ru"),
+                new DirectionOption("ru-en", "ru", "en"),
+                new DirectionOption("en-pt", "en", "pt"),
+                new DirectionOption("pt-en", "pt", "en"),
+                new DirectionOption("zh-ja", "zh", "ja"),
+                new DirectionOption("ja-zh", "ja", "zh"),
+                new DirectionOption("zh-ko", "zh", "ko"),
+                new DirectionOption("ko-zh", "ko", "zh")
             };
         }
 
-        public static string Translate(string text, string direction)
+        public static string Translate(string text, object direction)
         {
             DirectionInfo info = ResolveDirection(text, direction);
             string provider = Environment.GetEnvironmentVariable("RED_FRAME_TRANSLATOR_PROVIDER");
@@ -784,37 +1097,32 @@ namespace BeijingClaudeTranslator
             return Convert.ToString(translation["text"]).Trim();
         }
 
-        private static DirectionInfo ResolveDirection(string text, string direction)
+        private static DirectionInfo ResolveDirection(string text, object direction)
         {
-            if (direction == "中文转英文" || direction == "中文 → 英文") return Pair("zh-CN", "en", "zh-Hans", "en", "ZH", "EN-US");
-            if (direction == "英文转中文" || direction == "英文 → 中文") return Pair("en", "zh-CN", "en", "zh-Hans", "EN", "ZH-HANS");
-            if (direction == "中文 → 日文") return Pair("zh-CN", "ja", "zh-Hans", "ja", "ZH", "JA");
-            if (direction == "日文 → 中文") return Pair("ja", "zh-CN", "ja", "zh-Hans", "JA", "ZH-HANS");
-            if (direction == "中文 → 韩文") return Pair("zh-CN", "ko", "zh-Hans", "ko", "ZH", "KO");
-            if (direction == "韩文 → 中文") return Pair("ko", "zh-CN", "ko", "zh-Hans", "KO", "ZH-HANS");
-            if (direction == "中文 → 西班牙文") return Pair("zh-CN", "es", "zh-Hans", "es", "ZH", "ES");
-            if (direction == "西班牙文 → 中文") return Pair("es", "zh-CN", "es", "zh-Hans", "ES", "ZH-HANS");
-            if (direction == "中文 → 法文") return Pair("zh-CN", "fr", "zh-Hans", "fr", "ZH", "FR");
-            if (direction == "法文 → 中文") return Pair("fr", "zh-CN", "fr", "zh-Hans", "FR", "ZH-HANS");
-            if (direction == "中文 → 德文") return Pair("zh-CN", "de", "zh-Hans", "de", "ZH", "DE");
-            if (direction == "德文 → 中文") return Pair("de", "zh-CN", "de", "zh-Hans", "DE", "ZH-HANS");
-            if (direction == "中文 → 俄文") return Pair("zh-CN", "ru", "zh-Hans", "ru", "ZH", "RU");
-            if (direction == "俄文 → 中文") return Pair("ru", "zh-CN", "ru", "zh-Hans", "RU", "ZH-HANS");
-            if (direction == "中文 → 葡萄牙文") return Pair("zh-CN", "pt", "zh-Hans", "pt", "ZH", "PT-PT");
-            if (direction == "葡萄牙文 → 中文") return Pair("pt", "zh-CN", "pt", "zh-Hans", "PT", "ZH-HANS");
-            return ProbablyChinese(text)
-                ? Pair("zh-CN", "en", "zh-Hans", "en", "ZH", "EN-US")
-                : Pair("en", "zh-CN", "en", "zh-Hans", "EN", "ZH-HANS");
+            DirectionOption option = direction as DirectionOption;
+            if (option != null && !option.IsAuto) return Pair(option.SourceKey, option.TargetKey);
+
+            string sourceKey = DetectLanguageKey(text);
+            string targetKey = AppSettings.DefaultTargetLanguageKey;
+            if (sourceKey == targetKey) targetKey = sourceKey == "en" ? "zh" : "en";
+            return Pair(sourceKey, targetKey);
         }
 
-        private static DirectionInfo Pair(string source, string target, string microsoftSource, string microsoftTarget, string deepLSource, string deepLTarget)
+        private static DirectionInfo Pair(string sourceKey, string targetKey)
         {
-            return new DirectionInfo(source, target, microsoftSource, microsoftTarget, deepLSource, deepLTarget);
+            LanguageInfo source = LanguageInfo.Find(sourceKey);
+            LanguageInfo target = LanguageInfo.Find(targetKey);
+            if (source == null || target == null) throw new InvalidOperationException("Unsupported language direction.");
+            return new DirectionInfo(source.MyMemoryCode, target.MyMemoryCode, source.MicrosoftCode, target.MicrosoftCode, source.DeepLSourceCode, target.DeepLTargetCode);
         }
 
-        private static bool ProbablyChinese(string text)
+        private static string DetectLanguageKey(string text)
         {
-            return Regex.IsMatch(text, @"\p{IsCJKUnifiedIdeographs}");
+            if (Regex.IsMatch(text, @"[\u4e00-\u9fff]")) return "zh";
+            if (Regex.IsMatch(text, @"[\u3040-\u30ff]")) return "ja";
+            if (Regex.IsMatch(text, @"[\uac00-\ud7af]")) return "ko";
+            if (Regex.IsMatch(text, @"[\u0400-\u04ff]")) return "ru";
+            return "en";
         }
 
         private static bool IsTechnicalLine(string text)
@@ -926,7 +1234,7 @@ namespace BeijingClaudeTranslator
 
         public SetupGuideForm()
         {
-            Text = "安装引导";
+            Text = I18n.Text("安装引导", "Setup");
             Size = new Size(520, 360);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -952,27 +1260,27 @@ namespace BeijingClaudeTranslator
 
             Label title = new Label
             {
-                Text = "安装 ClaudeBridge CN",
+                Text = I18n.Text("安装 TimeLingo", "Install TimeLingo"),
                 Dock = DockStyle.Fill,
                 Font = new Font("Microsoft YaHei UI", 15f, FontStyle.Bold)
             };
             Label desc = new Label
             {
-                Text = "推荐安装到本机，之后可以从桌面或开始菜单启动。也可以先直接试用。",
+                Text = I18n.Text("推荐安装到本机，之后可以从桌面或开始菜单启动。也可以先直接试用。", "Install it for daily use, or run it once without installing."),
                 Dock = DockStyle.Fill,
                 ForeColor = Color.FromArgb(71, 85, 105)
             };
             Label info = new Label
             {
-                Text = "安装位置：当前用户目录\r\n不会修改系统时区\r\n关闭窗口后可留在系统托盘",
+                Text = I18n.Text("安装位置：当前用户目录\r\n不会修改系统时区\r\n关闭窗口后可留在系统托盘", "Install location: current user folder\r\nIt does not change the system time zone\r\nIt can keep running in the system tray"),
                 Dock = DockStyle.Fill,
                 BorderStyle = BorderStyle.FixedSingle,
                 Padding = new Padding(10),
                 ForeColor = Color.FromArgb(15, 23, 42),
                 BackColor = Color.FromArgb(248, 250, 252)
             };
-            desktopCheck = new CheckBox { Text = "创建桌面图标", Checked = true, AutoSize = true };
-            autoStartCheck = new CheckBox { Text = "开机自动启动", Checked = false, AutoSize = true };
+            desktopCheck = new CheckBox { Text = I18n.Text("创建桌面图标", "Create desktop shortcut"), Checked = true, AutoSize = true };
+            autoStartCheck = new CheckBox { Text = I18n.Text("开机自动启动", "Start with Windows"), Checked = false, AutoSize = true };
 
             FlowLayoutPanel buttons = new FlowLayoutPanel
             {
@@ -981,9 +1289,9 @@ namespace BeijingClaudeTranslator
                 WrapContents = false,
                 Padding = new Padding(0, 8, 0, 0)
             };
-            Button installButton = new Button { Text = "安装并打开", Width = 116, Height = 34 };
-            Button directButton = new Button { Text = "直接试用", Width = 92, Height = 34 };
-            Button exitButton = new Button { Text = "退出", Width = 76, Height = 34 };
+            Button installButton = new Button { Text = I18n.Text("安装并打开", "Install"), Width = 116, Height = 34 };
+            Button directButton = new Button { Text = I18n.Text("直接试用", "Run once"), Width = 92, Height = 34 };
+            Button exitButton = new Button { Text = I18n.Text("退出", "Exit"), Width = 76, Height = 34 };
             buttons.Controls.Add(installButton);
             buttons.Controls.Add(directButton);
             buttons.Controls.Add(exitButton);
@@ -1008,7 +1316,7 @@ namespace BeijingClaudeTranslator
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(this, "安装失败：" + ex.Message, AppInfo.ChineseName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(this, I18n.Text("安装失败：", "Install failed: ") + ex.Message, AppInfo.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             };
             directButton.Click += delegate
@@ -1024,6 +1332,163 @@ namespace BeijingClaudeTranslator
         }
     }
 
+    internal sealed class SettingsForm : Form
+    {
+        private readonly ComboBox uiLanguageBox;
+        private readonly ComboBox targetLanguageBox;
+
+        public SettingsForm(Icon icon)
+        {
+            Text = I18n.Text("设置", "Settings");
+            Size = new Size(500, 320);
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            Font = new Font("Microsoft YaHei UI", 9f);
+            Icon = icon;
+
+            TableLayoutPanel layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(24),
+                ColumnCount = 2,
+                RowCount = 5
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+            Controls.Add(layout);
+
+            Label title = new Label
+            {
+                Text = I18n.Text("偏好设置", "Preferences"),
+                Dock = DockStyle.Fill,
+                Font = new Font("Microsoft YaHei UI", 15f, FontStyle.Bold)
+            };
+            layout.Controls.Add(title, 0, 0);
+            layout.SetColumnSpan(title, 2);
+
+            layout.Controls.Add(NewSettingsLabel(I18n.Text("界面语言", "App language")), 0, 1);
+            uiLanguageBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
+            uiLanguageBox.Items.Add(new LanguageChoice("zh-CN", "简体中文"));
+            uiLanguageBox.Items.Add(new LanguageChoice("en-US", "English"));
+            SelectLanguageChoice(uiLanguageBox, AppSettings.UiLanguage);
+            layout.Controls.Add(uiLanguageBox, 1, 1);
+
+            layout.Controls.Add(NewSettingsLabel(I18n.Text("自动翻译到", "Auto translate to")), 0, 2);
+            targetLanguageBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
+            targetLanguageBox.Items.AddRange(LanguageInfo.GetAll());
+            SelectTargetLanguage();
+            layout.Controls.Add(targetLanguageBox, 1, 2);
+
+            Label hint = new Label
+            {
+                Text = I18n.Text("时区可以在主窗口右上角直接选择。自动判断会优先翻译到这里设置的目标语言。", "Time zone can be changed from the main window. Auto detect translates to the target language selected here."),
+                Dock = DockStyle.Fill,
+                ForeColor = Color.FromArgb(71, 85, 105)
+            };
+            layout.Controls.Add(hint, 0, 3);
+            layout.SetColumnSpan(hint, 2);
+
+            FlowLayoutPanel buttons = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.RightToLeft,
+                Dock = DockStyle.Fill,
+                WrapContents = false,
+                Padding = new Padding(0, 8, 0, 0)
+            };
+            Button saveButton = new Button { Text = I18n.Text("保存", "Save"), Width = 90, Height = 34 };
+            Button cancelButton = new Button { Text = I18n.Text("取消", "Cancel"), Width = 90, Height = 34 };
+            Button aboutButton = new Button { Text = I18n.Text("关于 / 更新", "About / Update"), Width = 116, Height = 34 };
+            buttons.Controls.Add(saveButton);
+            buttons.Controls.Add(cancelButton);
+            buttons.Controls.Add(aboutButton);
+            layout.Controls.Add(buttons, 0, 4);
+            layout.SetColumnSpan(buttons, 2);
+
+            AcceptButton = saveButton;
+            CancelButton = cancelButton;
+
+            saveButton.Click += delegate
+            {
+                LanguageChoice uiLanguage = uiLanguageBox.SelectedItem as LanguageChoice;
+                LanguageInfo targetLanguage = targetLanguageBox.SelectedItem as LanguageInfo;
+                if (uiLanguage != null) AppSettings.UiLanguage = uiLanguage.Key;
+                if (targetLanguage != null) AppSettings.DefaultTargetLanguageKey = targetLanguage.Key;
+                AppSettings.Save();
+                DialogResult = DialogResult.OK;
+                Close();
+            };
+            cancelButton.Click += delegate
+            {
+                DialogResult = DialogResult.Cancel;
+                Close();
+            };
+            aboutButton.Click += delegate
+            {
+                using (AboutForm about = new AboutForm(icon))
+                {
+                    about.ShowDialog(this);
+                }
+            };
+        }
+
+        private Label NewSettingsLabel(string text)
+        {
+            return new Label { Text = text, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
+        }
+
+        private void SelectLanguageChoice(ComboBox box, string key)
+        {
+            for (int i = 0; i < box.Items.Count; i++)
+            {
+                LanguageChoice choice = box.Items[i] as LanguageChoice;
+                if (choice != null && choice.Key == key)
+                {
+                    box.SelectedIndex = i;
+                    return;
+                }
+            }
+            box.SelectedIndex = 0;
+        }
+
+        private void SelectTargetLanguage()
+        {
+            for (int i = 0; i < targetLanguageBox.Items.Count; i++)
+            {
+                LanguageInfo language = targetLanguageBox.Items[i] as LanguageInfo;
+                if (language != null && language.Key == AppSettings.DefaultTargetLanguageKey)
+                {
+                    targetLanguageBox.SelectedIndex = i;
+                    return;
+                }
+            }
+            targetLanguageBox.SelectedIndex = 1;
+        }
+
+        private sealed class LanguageChoice
+        {
+            public readonly string Key;
+            private readonly string label;
+
+            public LanguageChoice(string key, string label)
+            {
+                Key = key;
+                this.label = label;
+            }
+
+            public override string ToString()
+            {
+                return label;
+            }
+        }
+    }
+
     internal sealed class AboutForm : Form
     {
         private readonly Label statusLabel;
@@ -1031,7 +1496,7 @@ namespace BeijingClaudeTranslator
 
         public AboutForm(Icon icon)
         {
-            Text = "关于";
+            Text = I18n.Text("关于", "About");
             Size = new Size(500, 280);
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -1055,19 +1520,19 @@ namespace BeijingClaudeTranslator
 
             Label title = new Label
             {
-                Text = AppInfo.ChineseName,
+                Text = AppInfo.ProductName,
                 Dock = DockStyle.Fill,
                 Font = new Font("Microsoft YaHei UI", 15f, FontStyle.Bold)
             };
             Label desc = new Label
             {
-                Text = "版本 " + AppInfo.Version + "\r\n给中文 Claude 用户用的时间和多语言小工具。",
+                Text = I18n.Text("版本 ", "Version ") + AppInfo.Version + I18n.Text("\r\n世界时间和多语言翻译小工具。", "\r\nA small world-time and multilingual translation tool."),
                 Dock = DockStyle.Fill,
                 ForeColor = Color.FromArgb(71, 85, 105)
             };
             statusLabel = new Label
             {
-                Text = "可以检查 GitHub 上的新版本。",
+                Text = I18n.Text("可以检查 GitHub 上的新版本。", "Check GitHub for updates."),
                 Dock = DockStyle.Fill,
                 BorderStyle = BorderStyle.FixedSingle,
                 Padding = new Padding(10),
@@ -1082,9 +1547,9 @@ namespace BeijingClaudeTranslator
                 WrapContents = false,
                 Padding = new Padding(0, 8, 0, 0)
             };
-            Button closeButton = new Button { Text = "关闭", Width = 90, Height = 34 };
+            Button closeButton = new Button { Text = I18n.Text("关闭", "Close"), Width = 90, Height = 34 };
             Button githubButton = new Button { Text = "GitHub", Width = 90, Height = 34 };
-            updateButton = new Button { Text = "检查更新", Width = 104, Height = 34 };
+            updateButton = new Button { Text = I18n.Text("检查更新", "Check Update"), Width = 112, Height = 34 };
             buttons.Controls.Add(closeButton);
             buttons.Controls.Add(githubButton);
             buttons.Controls.Add(updateButton);
@@ -1104,35 +1569,35 @@ namespace BeijingClaudeTranslator
         private async Task CheckUpdateAsync()
         {
             updateButton.Enabled = false;
-            statusLabel.Text = "正在检查...";
+            statusLabel.Text = I18n.Text("正在检查...", "Checking...");
             try
             {
                 ReleaseInfo latest = await Task.Run(delegate { return UpdateManager.GetLatestRelease(); });
                 if (VersionUtil.Compare(latest.Version, AppInfo.Version) <= 0)
                 {
-                    statusLabel.Text = "已经是最新版。";
+                    statusLabel.Text = I18n.Text("已经是最新版。", "Already up to date.");
                     return;
                 }
 
                 DialogResult confirm = MessageBox.Show(
                     this,
-                    "发现新版本 " + latest.Tag + "，现在更新吗？",
-                    AppInfo.ChineseName,
+                    I18n.Text("发现新版本 ", "New version ") + latest.Tag + I18n.Text("，现在更新吗？", " is available. Update now?"),
+                    AppInfo.ProductName,
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Question);
                 if (confirm != DialogResult.Yes)
                 {
-                    statusLabel.Text = "已取消更新。";
+                    statusLabel.Text = I18n.Text("已取消更新。", "Update canceled.");
                     return;
                 }
 
-                statusLabel.Text = "正在下载更新...";
+                statusLabel.Text = I18n.Text("正在下载更新...", "Downloading update...");
                 await Task.Run(delegate { UpdateManager.DownloadAndRestart(latest); });
                 Application.Exit();
             }
             catch (Exception ex)
             {
-                statusLabel.Text = "更新失败：" + ex.Message;
+                statusLabel.Text = I18n.Text("更新失败：", "Update failed: ") + ex.Message;
             }
             finally
             {
@@ -1153,10 +1618,11 @@ namespace BeijingClaudeTranslator
     {
         public static void ShowExistingWindow()
         {
-            IntPtr handle = NativeMethods.FindWindow(null, AppInfo.ChineseName);
+            IntPtr handle = NativeMethods.FindWindow(null, AppInfo.ProductName);
+            if (handle == IntPtr.Zero) handle = NativeMethods.FindWindow(null, "Claude 中文桥");
             if (handle == IntPtr.Zero) handle = NativeMethods.FindWindow(null, "北京时间翻译助手");
-            if (handle == IntPtr.Zero) handle = NativeMethods.FindWindow(null, "安装引导");
-            if (handle == IntPtr.Zero) handle = NativeMethods.FindWindow(null, "关于");
+            if (handle == IntPtr.Zero) handle = NativeMethods.FindWindow(null, I18n.Text("安装引导", "Setup"));
+            if (handle == IntPtr.Zero) handle = NativeMethods.FindWindow(null, I18n.Text("关于", "About"));
             if (handle != IntPtr.Zero)
             {
                 NativeMethods.ShowWindow(handle, NativeMethods.SW_RESTORE);
@@ -1191,15 +1657,20 @@ namespace BeijingClaudeTranslator
         public static bool IsRunningInstalledCopy()
         {
             string currentExe = Application.ExecutablePath;
-            return SamePath(currentExe, GetInstalledExePath()) || SamePath(currentExe, GetLegacyInstalledExePath());
+            return SamePath(currentExe, GetInstalledExePath()) || SamePath(currentExe, GetLegacyInstalledExePath()) || SamePath(currentExe, GetVeryLegacyInstalledExePath());
         }
 
         private static string GetInstallDir()
         {
-            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "ClaudeBridgeCN");
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "TimeLingo");
         }
 
         private static string GetLegacyInstallDir()
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "ClaudeBridgeCN");
+        }
+
+        private static string GetVeryLegacyInstallDir()
         {
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "BeijingClaudeTranslator");
         }
@@ -1214,14 +1685,19 @@ namespace BeijingClaudeTranslator
             return Path.Combine(GetLegacyInstallDir(), AppInfo.LegacyAssetName);
         }
 
+        private static string GetVeryLegacyInstalledExePath()
+        {
+            return Path.Combine(GetVeryLegacyInstallDir(), AppInfo.VeryLegacyAssetName);
+        }
+
         private static string GetDesktopShortcutPath()
         {
-            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "ClaudeBridge CN.lnk");
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "TimeLingo.lnk");
         }
 
         private static string GetStartMenuShortcutPath()
         {
-            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs", "ClaudeBridge CN.lnk");
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs", "TimeLingo.lnk");
         }
 
         private static bool SamePath(string left, string right)
@@ -1277,14 +1753,14 @@ namespace BeijingClaudeTranslator
 
         public static void DownloadAndRestart(ReleaseInfo release)
         {
-            string tempExe = Path.Combine(Path.GetTempPath(), "ClaudeBridgeCN-update-" + Guid.NewGuid().ToString("N") + ".exe");
+            string tempExe = Path.Combine(Path.GetTempPath(), "TimeLingo-update-" + Guid.NewGuid().ToString("N") + ".exe");
             using (WebClient client = new WebClient())
             {
                 client.Headers.Add("User-Agent", AppInfo.ProductName);
                 client.DownloadFile(release.DownloadUrl, tempExe);
             }
 
-            string script = Path.Combine(Path.GetTempPath(), "ClaudeBridgeCN-update-" + Guid.NewGuid().ToString("N") + ".cmd");
+            string script = Path.Combine(Path.GetTempPath(), "TimeLingo-update-" + Guid.NewGuid().ToString("N") + ".cmd");
             string currentExe = Application.ExecutablePath;
             int pid = Process.GetCurrentProcess().Id;
             string content =
@@ -1368,12 +1844,13 @@ namespace BeijingClaudeTranslator
 
     internal static class AutoStart
     {
-        private const string ShortcutName = "ClaudeBridgeCN.lnk";
-        private const string LegacyShortcutName = "BeijingClaudeTranslator.lnk";
+        private const string ShortcutName = "TimeLingo.lnk";
+        private const string LegacyShortcutName = "ClaudeBridgeCN.lnk";
+        private const string VeryLegacyShortcutName = "BeijingClaudeTranslator.lnk";
 
         public static bool IsEnabled()
         {
-            return File.Exists(GetShortcutPath(ShortcutName)) || File.Exists(GetShortcutPath(LegacyShortcutName));
+            return File.Exists(GetShortcutPath(ShortcutName)) || File.Exists(GetShortcutPath(LegacyShortcutName)) || File.Exists(GetShortcutPath(VeryLegacyShortcutName));
         }
 
         public static void SetEnabled(bool enabled)
@@ -1393,6 +1870,8 @@ namespace BeijingClaudeTranslator
             if (File.Exists(shortcutPath)) File.Delete(shortcutPath);
             string legacyShortcutPath = GetShortcutPath(LegacyShortcutName);
             if (File.Exists(legacyShortcutPath)) File.Delete(legacyShortcutPath);
+            string veryLegacyShortcutPath = GetShortcutPath(VeryLegacyShortcutName);
+            if (File.Exists(veryLegacyShortcutPath)) File.Delete(veryLegacyShortcutPath);
         }
 
         private static string GetShortcutPath()
@@ -1421,7 +1900,7 @@ namespace BeijingClaudeTranslator
             SetProperty(shortcutType, shortcut, "TargetPath", targetExe);
             SetProperty(shortcutType, shortcut, "WorkingDirectory", Path.GetDirectoryName(targetExe));
             SetProperty(shortcutType, shortcut, "IconLocation", targetExe);
-            SetProperty(shortcutType, shortcut, "Description", AppInfo.ChineseName);
+            SetProperty(shortcutType, shortcut, "Description", AppInfo.ProductName);
             shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, null);
         }
 
