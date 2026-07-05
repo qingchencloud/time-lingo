@@ -14,26 +14,29 @@ using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
-[assembly: AssemblyTitle("Beijing Claude Translator")]
-[assembly: AssemblyProduct("Beijing Claude Translator")]
-[assembly: AssemblyCompany("Beijing Claude Translator contributors")]
-[assembly: AssemblyCopyright("Copyright (c) 2026 Beijing Claude Translator contributors")]
-[assembly: AssemblyVersion("0.3.0.0")]
-[assembly: AssemblyFileVersion("0.3.0.0")]
+[assembly: AssemblyTitle("ClaudeBridge CN")]
+[assembly: AssemblyProduct("ClaudeBridge CN")]
+[assembly: AssemblyCompany("QingChen Cloud")]
+[assembly: AssemblyCopyright("Copyright (c) 2026 QingChen Cloud")]
+[assembly: AssemblyVersion("0.4.0.0")]
+[assembly: AssemblyFileVersion("0.4.0.0")]
 
 namespace BeijingClaudeTranslator
 {
     internal static class AppInfo
     {
-        public const string ProductName = "Beijing Claude Translator";
-        public const string ChineseName = "北京时间翻译助手";
-        public const string Version = "0.3.0";
-        public const string Owner = "1186258278";
-        public const string Repo = "beijing-claude-translator";
-        public const string RepoUrl = "https://github.com/1186258278/beijing-claude-translator";
-        public const string LatestReleaseApi = "https://api.github.com/repos/1186258278/beijing-claude-translator/releases/latest";
-        public const string AssetName = "BeijingClaudeTranslator.exe";
+        public const string ProductName = "ClaudeBridge CN";
+        public const string ChineseName = "Claude 中文桥";
+        public const string Version = "0.4.0";
+        public const string Owner = "qingchencloud";
+        public const string Repo = "claude-bridge-cn";
+        public const string RepoUrl = "https://github.com/qingchencloud/claude-bridge-cn";
+        public const string LatestReleaseApi = "https://api.github.com/repos/qingchencloud/claude-bridge-cn/releases/latest";
+        public const string AssetName = "ClaudeBridgeCN.exe";
+        public const string LegacyAssetName = "BeijingClaudeTranslator.exe";
         public const string MutexName = "Local\\BeijingClaudeTranslator.SingleInstance";
+
+        public static readonly string[] ReleaseAssetNames = { AssetName, LegacyAssetName };
     }
 
     internal static class Program
@@ -117,7 +120,7 @@ namespace BeijingClaudeTranslator
 
         public MainForm()
         {
-            Text = "北京时间翻译助手";
+            Text = AppInfo.ChineseName;
             Size = new Size(460, 520);
             MinimumSize = new Size(420, 460);
             StartPosition = FormStartPosition.Manual;
@@ -247,7 +250,7 @@ namespace BeijingClaudeTranslator
 
             notifyIcon = new NotifyIcon
             {
-                Text = "北京时间翻译助手",
+                Text = AppInfo.ChineseName,
                 Icon = appIcon,
                 ContextMenuStrip = trayMenu,
                 Visible = true
@@ -362,7 +365,7 @@ namespace BeijingClaudeTranslator
                 e.Cancel = true;
                 Hide();
                 notifyIcon.Visible = true;
-                notifyIcon.ShowBalloonTip(1200, "北京时间翻译助手", "已到托盘，右键可退出。", ToolTipIcon.Info);
+                notifyIcon.ShowBalloonTip(1200, AppInfo.ChineseName, "已到托盘，右键可退出。", ToolTipIcon.Info);
             }
         }
 
@@ -947,7 +950,7 @@ namespace BeijingClaudeTranslator
             };
             Label desc = new Label
             {
-                Text = "版本 " + AppInfo.Version + "\r\n给 Claude 用户用的北京时间和中英文翻译小工具。",
+                Text = "版本 " + AppInfo.Version + "\r\n给中文 Claude 用户用的时间和中英文小工具。",
                 Dock = DockStyle.Fill
             };
             statusLabel = new Label { Text = "可以检查 GitHub 上的新版本。", Dock = DockStyle.Fill };
@@ -1027,6 +1030,7 @@ namespace BeijingClaudeTranslator
         public static void ShowExistingWindow()
         {
             IntPtr handle = NativeMethods.FindWindow(null, AppInfo.ChineseName);
+            if (handle == IntPtr.Zero) handle = NativeMethods.FindWindow(null, "北京时间翻译助手");
             if (handle == IntPtr.Zero) handle = NativeMethods.FindWindow(null, "安装引导");
             if (handle == IntPtr.Zero) handle = NativeMethods.FindWindow(null, "关于");
             if (handle != IntPtr.Zero)
@@ -1062,10 +1066,16 @@ namespace BeijingClaudeTranslator
 
         public static bool IsRunningInstalledCopy()
         {
-            return SamePath(Application.ExecutablePath, GetInstalledExePath());
+            string currentExe = Application.ExecutablePath;
+            return SamePath(currentExe, GetInstalledExePath()) || SamePath(currentExe, GetLegacyInstalledExePath());
         }
 
         private static string GetInstallDir()
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "ClaudeBridgeCN");
+        }
+
+        private static string GetLegacyInstallDir()
         {
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "BeijingClaudeTranslator");
         }
@@ -1075,14 +1085,19 @@ namespace BeijingClaudeTranslator
             return Path.Combine(GetInstallDir(), AppInfo.AssetName);
         }
 
+        private static string GetLegacyInstalledExePath()
+        {
+            return Path.Combine(GetLegacyInstallDir(), AppInfo.LegacyAssetName);
+        }
+
         private static string GetDesktopShortcutPath()
         {
-            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Beijing Claude Translator.lnk");
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "ClaudeBridge CN.lnk");
         }
 
         private static string GetStartMenuShortcutPath()
         {
-            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs", "Beijing Claude Translator.lnk");
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs", "ClaudeBridge CN.lnk");
         }
 
         private static bool SamePath(string left, string right)
@@ -1111,7 +1126,7 @@ namespace BeijingClaudeTranslator
                     Dictionary<string, object> asset = item as Dictionary<string, object>;
                     if (asset == null) continue;
                     string name = Convert.ToString(asset["name"]);
-                    if (string.Equals(name, AppInfo.AssetName, StringComparison.OrdinalIgnoreCase))
+                    if (IsWindowsAsset(name))
                     {
                         downloadUrl = Convert.ToString(asset["browser_download_url"]);
                         break;
@@ -1127,16 +1142,25 @@ namespace BeijingClaudeTranslator
             return new ReleaseInfo(tag, htmlUrl, downloadUrl);
         }
 
+        private static bool IsWindowsAsset(string name)
+        {
+            foreach (string assetName in AppInfo.ReleaseAssetNames)
+            {
+                if (string.Equals(name, assetName, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
+        }
+
         public static void DownloadAndRestart(ReleaseInfo release)
         {
-            string tempExe = Path.Combine(Path.GetTempPath(), "BeijingClaudeTranslator-update-" + Guid.NewGuid().ToString("N") + ".exe");
+            string tempExe = Path.Combine(Path.GetTempPath(), "ClaudeBridgeCN-update-" + Guid.NewGuid().ToString("N") + ".exe");
             using (WebClient client = new WebClient())
             {
                 client.Headers.Add("User-Agent", AppInfo.ProductName);
                 client.DownloadFile(release.DownloadUrl, tempExe);
             }
 
-            string script = Path.Combine(Path.GetTempPath(), "BeijingClaudeTranslator-update-" + Guid.NewGuid().ToString("N") + ".cmd");
+            string script = Path.Combine(Path.GetTempPath(), "ClaudeBridgeCN-update-" + Guid.NewGuid().ToString("N") + ".cmd");
             string currentExe = Application.ExecutablePath;
             int pid = Process.GetCurrentProcess().Id;
             string content =
@@ -1220,11 +1244,12 @@ namespace BeijingClaudeTranslator
 
     internal static class AutoStart
     {
-        private const string ShortcutName = "BeijingClaudeTranslator.lnk";
+        private const string ShortcutName = "ClaudeBridgeCN.lnk";
+        private const string LegacyShortcutName = "BeijingClaudeTranslator.lnk";
 
         public static bool IsEnabled()
         {
-            return File.Exists(GetShortcutPath());
+            return File.Exists(GetShortcutPath(ShortcutName)) || File.Exists(GetShortcutPath(LegacyShortcutName));
         }
 
         public static void SetEnabled(bool enabled)
@@ -1242,12 +1267,19 @@ namespace BeijingClaudeTranslator
             }
 
             if (File.Exists(shortcutPath)) File.Delete(shortcutPath);
+            string legacyShortcutPath = GetShortcutPath(LegacyShortcutName);
+            if (File.Exists(legacyShortcutPath)) File.Delete(legacyShortcutPath);
         }
 
         private static string GetShortcutPath()
         {
+            return GetShortcutPath(ShortcutName);
+        }
+
+        private static string GetShortcutPath(string shortcutName)
+        {
             string startup = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-            return Path.Combine(startup, ShortcutName);
+            return Path.Combine(startup, shortcutName);
         }
     }
 
