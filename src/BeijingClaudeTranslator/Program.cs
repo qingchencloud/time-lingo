@@ -6,6 +6,7 @@ using System.Drawing.Drawing2D;
 using System.IO;
 using System.Net;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -13,8 +14,28 @@ using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
+[assembly: AssemblyTitle("Beijing Claude Translator")]
+[assembly: AssemblyProduct("Beijing Claude Translator")]
+[assembly: AssemblyCompany("Beijing Claude Translator contributors")]
+[assembly: AssemblyCopyright("Copyright (c) 2026 Beijing Claude Translator contributors")]
+[assembly: AssemblyVersion("0.3.0.0")]
+[assembly: AssemblyFileVersion("0.3.0.0")]
+
 namespace BeijingClaudeTranslator
 {
+    internal static class AppInfo
+    {
+        public const string ProductName = "Beijing Claude Translator";
+        public const string ChineseName = "北京时间翻译助手";
+        public const string Version = "0.3.0";
+        public const string Owner = "1186258278";
+        public const string Repo = "beijing-claude-translator";
+        public const string RepoUrl = "https://github.com/1186258278/beijing-claude-translator";
+        public const string LatestReleaseApi = "https://api.github.com/repos/1186258278/beijing-claude-translator/releases/latest";
+        public const string AssetName = "BeijingClaudeTranslator.exe";
+        public const string MutexName = "Local\\BeijingClaudeTranslator.SingleInstance";
+    }
+
     internal static class Program
     {
         [STAThread]
@@ -33,9 +54,32 @@ namespace BeijingClaudeTranslator
                 return;
             }
 
+            bool createdNew;
+            using (Mutex mutex = new Mutex(true, AppInfo.MutexName, out createdNew))
+            {
+                if (!createdNew)
+                {
+                    ExistingInstance.ShowExistingWindow();
+                    return;
+                }
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+
+                if (SetupGuide.ShouldShow())
+                {
+                    using (SetupGuideForm guide = new SetupGuideForm())
+                    {
+                        DialogResult result = guide.ShowDialog();
+                        if (result == DialogResult.Abort)
+                        {
+                            return;
+                        }
+                    }
+                }
+
             Application.Run(new MainForm());
+            }
         }
     }
 
@@ -57,6 +101,7 @@ namespace BeijingClaudeTranslator
         private readonly Button translateButton;
         private readonly Button copyButton;
         private readonly Button clearButton;
+        private readonly Button aboutButton;
         private readonly CheckBox topMostCheck;
         private readonly CheckBox trayCheck;
         private readonly CheckBox themeCheck;
@@ -133,10 +178,11 @@ namespace BeijingClaudeTranslator
             header.Controls.Add(endpointLabel, 1, 1);
             layout.Controls.Add(header, 0, 0);
 
-            toolbar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1 };
+            toolbar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 1 };
             toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));
             toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));
             toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));
 
             directionBox = new ComboBox
@@ -151,10 +197,12 @@ namespace BeijingClaudeTranslator
             translateButton = NewButton("开始翻译");
             copyButton = NewButton("复制结果");
             clearButton = NewButton("清空");
+            aboutButton = NewButton("关于");
             toolbar.Controls.Add(directionBox, 0, 0);
             toolbar.Controls.Add(translateButton, 1, 0);
             toolbar.Controls.Add(copyButton, 2, 0);
             toolbar.Controls.Add(clearButton, 3, 0);
+            toolbar.Controls.Add(aboutButton, 4, 0);
             layout.Controls.Add(toolbar, 0, 1);
 
             inputLabel = NewLabel("输入内容", 9f, FontStyle.Bold);
@@ -191,8 +239,10 @@ namespace BeijingClaudeTranslator
 
             trayMenu = new ContextMenuStrip();
             ToolStripMenuItem showTrayItem = new ToolStripMenuItem("显示");
+            ToolStripMenuItem aboutTrayItem = new ToolStripMenuItem("关于 / 更新");
             ToolStripMenuItem exitTrayItem = new ToolStripMenuItem("退出");
             trayMenu.Items.Add(showTrayItem);
+            trayMenu.Items.Add(aboutTrayItem);
             trayMenu.Items.Add(exitTrayItem);
 
             notifyIcon = new NotifyIcon
@@ -208,6 +258,7 @@ namespace BeijingClaudeTranslator
             clockTimer.Start();
 
             showTrayItem.Click += delegate { ShowMainWindow(); };
+            aboutTrayItem.Click += delegate { ShowAbout(); };
             notifyIcon.DoubleClick += delegate { ShowMainWindow(); };
             exitTrayItem.Click += delegate
             {
@@ -224,6 +275,7 @@ namespace BeijingClaudeTranslator
                 ApplyTheme();
             };
             autoStartCheck.CheckedChanged += delegate { ToggleAutoStart(); };
+            aboutButton.Click += delegate { ShowAbout(); };
             translateButton.Click += async delegate { await TranslateFromUiAsync(); };
             copyButton.Click += delegate
             {
@@ -321,6 +373,15 @@ namespace BeijingClaudeTranslator
             Activate();
         }
 
+        private void ShowAbout()
+        {
+            ShowMainWindow();
+            using (AboutForm about = new AboutForm(appIcon))
+            {
+                about.ShowDialog(this);
+            }
+        }
+
         private void SetBusy(bool busy)
         {
             translateButton.Enabled = !busy;
@@ -398,6 +459,7 @@ namespace BeijingClaudeTranslator
             SetButtonTheme(translateButton, true);
             SetButtonTheme(copyButton, false);
             SetButtonTheme(clearButton, false);
+            SetButtonTheme(aboutButton, false);
         }
 
         private Label NewLabel(string text, float size, FontStyle style)
@@ -765,6 +827,397 @@ namespace BeijingClaudeTranslator
         }
     }
 
+    internal sealed class SetupGuideForm : Form
+    {
+        private readonly CheckBox desktopCheck;
+        private readonly CheckBox autoStartCheck;
+
+        public SetupGuideForm()
+        {
+            Text = "安装引导";
+            Size = new Size(420, 250);
+            StartPosition = FormStartPosition.CenterScreen;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            Font = new Font("Microsoft YaHei UI", 9f);
+            Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+
+            TableLayoutPanel layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(18),
+                ColumnCount = 1,
+                RowCount = 5
+            };
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            Controls.Add(layout);
+
+            Label title = new Label
+            {
+                Text = "要安装到本机吗？",
+                Dock = DockStyle.Fill,
+                Font = new Font("Microsoft YaHei UI", 13f, FontStyle.Bold)
+            };
+            Label desc = new Label
+            {
+                Text = "安装后会放到用户目录，并创建启动入口。也可以直接使用，不安装。",
+                Dock = DockStyle.Fill
+            };
+            desktopCheck = new CheckBox { Text = "创建桌面图标", Checked = true, AutoSize = true };
+            autoStartCheck = new CheckBox { Text = "开机自动启动", Checked = false, AutoSize = true };
+
+            FlowLayoutPanel buttons = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.RightToLeft,
+                Dock = DockStyle.Fill
+            };
+            Button installButton = new Button { Text = "安装并打开", Width = 104, Height = 34 };
+            Button directButton = new Button { Text = "直接使用", Width = 92, Height = 34 };
+            buttons.Controls.Add(installButton);
+            buttons.Controls.Add(directButton);
+
+            layout.Controls.Add(title, 0, 0);
+            layout.Controls.Add(desc, 0, 1);
+            layout.Controls.Add(desktopCheck, 0, 2);
+            layout.Controls.Add(autoStartCheck, 0, 3);
+            layout.Controls.Add(buttons, 0, 4);
+
+            installButton.Click += delegate
+            {
+                try
+                {
+                    string installedExe = Installer.Install(desktopCheck.Checked, autoStartCheck.Checked);
+                    Process.Start(installedExe);
+                    DialogResult = DialogResult.Abort;
+                    Close();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, "安装失败：" + ex.Message, AppInfo.ChineseName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+            directButton.Click += delegate
+            {
+                DialogResult = DialogResult.OK;
+                Close();
+            };
+        }
+    }
+
+    internal sealed class AboutForm : Form
+    {
+        private readonly Label statusLabel;
+        private readonly Button updateButton;
+
+        public AboutForm(Icon icon)
+        {
+            Text = "关于";
+            Size = new Size(420, 260);
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            Font = new Font("Microsoft YaHei UI", 9f);
+            Icon = icon;
+
+            TableLayoutPanel layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(18),
+                ColumnCount = 1,
+                RowCount = 5
+            };
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            Controls.Add(layout);
+
+            Label title = new Label
+            {
+                Text = AppInfo.ChineseName,
+                Dock = DockStyle.Fill,
+                Font = new Font("Microsoft YaHei UI", 13f, FontStyle.Bold)
+            };
+            Label desc = new Label
+            {
+                Text = "版本 " + AppInfo.Version + "\r\n给 Claude 用户用的北京时间和中英文翻译小工具。",
+                Dock = DockStyle.Fill
+            };
+            statusLabel = new Label { Text = "可以检查 GitHub 上的新版本。", Dock = DockStyle.Fill };
+
+            FlowLayoutPanel buttons = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.RightToLeft,
+                Dock = DockStyle.Fill
+            };
+            Button closeButton = new Button { Text = "关闭", Width = 76, Height = 34 };
+            Button githubButton = new Button { Text = "GitHub", Width = 76, Height = 34 };
+            updateButton = new Button { Text = "检查更新", Width = 92, Height = 34 };
+            buttons.Controls.Add(closeButton);
+            buttons.Controls.Add(githubButton);
+            buttons.Controls.Add(updateButton);
+
+            layout.Controls.Add(title, 0, 0);
+            layout.Controls.Add(desc, 0, 1);
+            layout.Controls.Add(statusLabel, 0, 2);
+            layout.Controls.Add(buttons, 0, 3);
+
+            closeButton.Click += delegate { Close(); };
+            githubButton.Click += delegate { Process.Start(AppInfo.RepoUrl); };
+            updateButton.Click += async delegate { await CheckUpdateAsync(); };
+        }
+
+        private async Task CheckUpdateAsync()
+        {
+            updateButton.Enabled = false;
+            statusLabel.Text = "正在检查...";
+            try
+            {
+                ReleaseInfo latest = await Task.Run(delegate { return UpdateManager.GetLatestRelease(); });
+                if (VersionUtil.Compare(latest.Version, AppInfo.Version) <= 0)
+                {
+                    statusLabel.Text = "已经是最新版。";
+                    return;
+                }
+
+                DialogResult confirm = MessageBox.Show(
+                    this,
+                    "发现新版本 " + latest.Tag + "，现在更新吗？",
+                    AppInfo.ChineseName,
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+                if (confirm != DialogResult.Yes)
+                {
+                    statusLabel.Text = "已取消更新。";
+                    return;
+                }
+
+                statusLabel.Text = "正在下载更新...";
+                await Task.Run(delegate { UpdateManager.DownloadAndRestart(latest); });
+                Application.Exit();
+            }
+            catch (Exception ex)
+            {
+                statusLabel.Text = "更新失败：" + ex.Message;
+            }
+            finally
+            {
+                updateButton.Enabled = true;
+            }
+        }
+    }
+
+    internal static class SetupGuide
+    {
+        public static bool ShouldShow()
+        {
+            return !Installer.IsRunningInstalledCopy();
+        }
+    }
+
+    internal static class ExistingInstance
+    {
+        public static void ShowExistingWindow()
+        {
+            IntPtr handle = NativeMethods.FindWindow(null, AppInfo.ChineseName);
+            if (handle == IntPtr.Zero) handle = NativeMethods.FindWindow(null, "安装引导");
+            if (handle == IntPtr.Zero) handle = NativeMethods.FindWindow(null, "关于");
+            if (handle != IntPtr.Zero)
+            {
+                NativeMethods.ShowWindow(handle, NativeMethods.SW_RESTORE);
+                NativeMethods.SetForegroundWindow(handle);
+            }
+        }
+    }
+
+    internal static class Installer
+    {
+        public static string Install(bool createDesktopShortcut, bool enableAutoStart)
+        {
+            string installDir = GetInstallDir();
+            string installedExe = GetInstalledExePath();
+            Directory.CreateDirectory(installDir);
+
+            string currentExe = Application.ExecutablePath;
+            if (!SamePath(currentExe, installedExe))
+            {
+                File.Copy(currentExe, installedExe, true);
+            }
+
+            ShortcutHelper.SaveShortcut(GetStartMenuShortcutPath(), installedExe);
+            if (createDesktopShortcut)
+            {
+                ShortcutHelper.SaveShortcut(GetDesktopShortcutPath(), installedExe);
+            }
+            AutoStart.SetEnabledForExecutable(enableAutoStart, installedExe);
+            return installedExe;
+        }
+
+        public static bool IsRunningInstalledCopy()
+        {
+            return SamePath(Application.ExecutablePath, GetInstalledExePath());
+        }
+
+        private static string GetInstallDir()
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "BeijingClaudeTranslator");
+        }
+
+        private static string GetInstalledExePath()
+        {
+            return Path.Combine(GetInstallDir(), AppInfo.AssetName);
+        }
+
+        private static string GetDesktopShortcutPath()
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Beijing Claude Translator.lnk");
+        }
+
+        private static string GetStartMenuShortcutPath()
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs", "Beijing Claude Translator.lnk");
+        }
+
+        private static bool SamePath(string left, string right)
+        {
+            return string.Equals(Path.GetFullPath(left).TrimEnd('\\'), Path.GetFullPath(right).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    internal static class UpdateManager
+    {
+        public static ReleaseInfo GetLatestRelease()
+        {
+            string json = HttpGet(AppInfo.LatestReleaseApi);
+            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            Dictionary<string, object> root = serializer.Deserialize<Dictionary<string, object>>(json);
+
+            string tag = Convert.ToString(root["tag_name"]);
+            string htmlUrl = root.ContainsKey("html_url") ? Convert.ToString(root["html_url"]) : AppInfo.RepoUrl;
+            string downloadUrl = "";
+
+            object[] assets = root["assets"] as object[];
+            if (assets != null)
+            {
+                foreach (object item in assets)
+                {
+                    Dictionary<string, object> asset = item as Dictionary<string, object>;
+                    if (asset == null) continue;
+                    string name = Convert.ToString(asset["name"]);
+                    if (string.Equals(name, AppInfo.AssetName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        downloadUrl = Convert.ToString(asset["browser_download_url"]);
+                        break;
+                    }
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(downloadUrl))
+            {
+                throw new InvalidOperationException("没有找到 Windows exe 下载文件。");
+            }
+
+            return new ReleaseInfo(tag, htmlUrl, downloadUrl);
+        }
+
+        public static void DownloadAndRestart(ReleaseInfo release)
+        {
+            string tempExe = Path.Combine(Path.GetTempPath(), "BeijingClaudeTranslator-update-" + Guid.NewGuid().ToString("N") + ".exe");
+            using (WebClient client = new WebClient())
+            {
+                client.Headers.Add("User-Agent", AppInfo.ProductName);
+                client.DownloadFile(release.DownloadUrl, tempExe);
+            }
+
+            string script = Path.Combine(Path.GetTempPath(), "BeijingClaudeTranslator-update-" + Guid.NewGuid().ToString("N") + ".cmd");
+            string currentExe = Application.ExecutablePath;
+            int pid = Process.GetCurrentProcess().Id;
+            string content =
+                "@echo off\r\n" +
+                "setlocal\r\n" +
+                "set \"SRC=" + tempExe + "\"\r\n" +
+                "set \"DST=" + currentExe + "\"\r\n" +
+                "set \"PID=" + pid + "\"\r\n" +
+                ":wait\r\n" +
+                "tasklist /fi \"PID eq %PID%\" | find \"%PID%\" >nul\r\n" +
+                "if not errorlevel 1 (\r\n" +
+                "  timeout /t 1 /nobreak >nul\r\n" +
+                "  goto wait\r\n" +
+                ")\r\n" +
+                "copy /y \"%SRC%\" \"%DST%\" >nul\r\n" +
+                "start \"\" \"%DST%\"\r\n" +
+                "del \"%SRC%\" >nul 2>nul\r\n" +
+                "del \"%~f0\" >nul 2>nul\r\n";
+            File.WriteAllText(script, content, Encoding.Default);
+
+            ProcessStartInfo start = new ProcessStartInfo("cmd.exe", "/c \"" + script + "\"")
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+            Process.Start(start);
+        }
+
+        private static string HttpGet(string url)
+        {
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+            request.Method = "GET";
+            request.Timeout = 20000;
+            request.UserAgent = AppInfo.ProductName;
+            request.Accept = "application/vnd.github+json";
+            using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+            using (Stream stream = response.GetResponseStream())
+            using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
+            {
+                return reader.ReadToEnd();
+            }
+        }
+    }
+
+    internal sealed class ReleaseInfo
+    {
+        public readonly string Tag;
+        public readonly string Version;
+        public readonly string HtmlUrl;
+        public readonly string DownloadUrl;
+
+        public ReleaseInfo(string tag, string htmlUrl, string downloadUrl)
+        {
+            Tag = tag;
+            Version = VersionUtil.Normalize(tag);
+            HtmlUrl = htmlUrl;
+            DownloadUrl = downloadUrl;
+        }
+    }
+
+    internal static class VersionUtil
+    {
+        public static string Normalize(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return "0.0.0";
+            value = value.Trim();
+            if (value.StartsWith("v", StringComparison.OrdinalIgnoreCase)) value = value.Substring(1);
+            return value;
+        }
+
+        public static int Compare(string left, string right)
+        {
+            Version leftVersion;
+            Version rightVersion;
+            if (!Version.TryParse(Normalize(left), out leftVersion)) leftVersion = new Version(0, 0, 0);
+            if (!Version.TryParse(Normalize(right), out rightVersion)) rightVersion = new Version(0, 0, 0);
+            return leftVersion.CompareTo(rightVersion);
+        }
+    }
+
     internal static class AutoStart
     {
         private const string ShortcutName = "BeijingClaudeTranslator.lnk";
@@ -776,10 +1229,15 @@ namespace BeijingClaudeTranslator
 
         public static void SetEnabled(bool enabled)
         {
+            SetEnabledForExecutable(enabled, Application.ExecutablePath);
+        }
+
+        public static void SetEnabledForExecutable(bool enabled, string targetExe)
+        {
             string shortcutPath = GetShortcutPath();
             if (enabled)
             {
-                SaveShortcut(shortcutPath);
+                ShortcutHelper.SaveShortcut(shortcutPath, targetExe);
                 return;
             }
 
@@ -791,8 +1249,11 @@ namespace BeijingClaudeTranslator
             string startup = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
             return Path.Combine(startup, ShortcutName);
         }
+    }
 
-        private static void SaveShortcut(string shortcutPath)
+    internal static class ShortcutHelper
+    {
+        public static void SaveShortcut(string shortcutPath, string targetExe)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(shortcutPath));
 
@@ -801,10 +1262,10 @@ namespace BeijingClaudeTranslator
             object shortcut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { shortcutPath });
             Type shortcutType = shortcut.GetType();
 
-            SetProperty(shortcutType, shortcut, "TargetPath", Application.ExecutablePath);
-            SetProperty(shortcutType, shortcut, "WorkingDirectory", AppDomain.CurrentDomain.BaseDirectory);
-            SetProperty(shortcutType, shortcut, "IconLocation", Application.ExecutablePath);
-            SetProperty(shortcutType, shortcut, "Description", "北京时间翻译助手");
+            SetProperty(shortcutType, shortcut, "TargetPath", targetExe);
+            SetProperty(shortcutType, shortcut, "WorkingDirectory", Path.GetDirectoryName(targetExe));
+            SetProperty(shortcutType, shortcut, "IconLocation", targetExe);
+            SetProperty(shortcutType, shortcut, "Description", AppInfo.ChineseName);
             shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, null);
         }
 
@@ -812,5 +1273,19 @@ namespace BeijingClaudeTranslator
         {
             type.InvokeMember(name, BindingFlags.SetProperty, null, target, new[] { value });
         }
+    }
+
+    internal static class NativeMethods
+    {
+        public const int SW_RESTORE = 9;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+        [DllImport("user32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
     }
 }
