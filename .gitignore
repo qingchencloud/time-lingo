@@ -1,5 +1,9 @@
 dist/
+bin/
+obj/
 *.zip
+*.exe
+*.pdb
 *.lnk
 *.tmp
 *.log

@@ -25,46 +25,33 @@ jobs:
         run: |
           $tokens = $null
           $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\RedFrameClockTranslator.ps1", [ref]$tokens, [ref]$errors) | Out-Null
-          if ($errors.Count -gt 0) {
-            $errors | Format-List *
-            exit 1
-          }
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\build.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | Format-List *; exit 1 }
 
-      - name: Smoke test worker mode
+      - name: Build single exe
         shell: powershell
         run: |
-          $dir = Join-Path $env:RUNNER_TEMP "translator-smoke"
-          New-Item -ItemType Directory -Force -Path $dir | Out-Null
-          $input = Join-Path $dir "input.txt"
-          $output = Join-Path $dir "output.json"
-          [System.IO.File]::WriteAllText($input, "cd D:\Test`r`ngit status --short", [System.Text.UTF8Encoding]::new($false))
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\RedFrameClockTranslator.ps1 -WorkerMode -InputFile $input -OutputFile $output -WorkerDirection 自动判断
-          if (-not (Test-Path $output)) {
-            throw "Worker did not write output."
-          }
-          $result = Get-Content -Raw $output | ConvertFrom-Json
-          if (-not $result.ok) {
-            throw $result.error
-          }
+          .\build.ps1
 
-      - name: Package portable client
+      - name: Check exe
         shell: powershell
         run: |
-          $app = "BeijingClaudeTranslator-win"
-          $out = Join-Path $PWD "dist\$app"
-          New-Item -ItemType Directory -Force -Path $out | Out-Null
-          Copy-Item RedFrameClockTranslator.ps1,Start-ClockTranslator.vbs,Start-ClockTranslator.cmd,Install-DesktopShortcut.cmd,beijing-translator.ico,README.md,LICENSE -Destination $out
-          Compress-Archive -Path "$out\*" -DestinationPath "dist\$app.zip" -Force
+          $exe = "$PWD\dist\BeijingClaudeTranslator.exe"
+          if (-not (Test-Path $exe)) { throw "Missing exe." }
+          & $exe --smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe)
+          if ($null -eq $icon) { throw "Missing exe icon." }
+          $icon.Dispose()
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
-          name: BeijingClaudeTranslator-win
-          path: dist/BeijingClaudeTranslator-win.zip
+          name: BeijingClaudeTranslator
+          path: dist/BeijingClaudeTranslator.exe
 
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/BeijingClaudeTranslator-win.zip
+          files: dist/BeijingClaudeTranslator.exe

@@ -17,19 +17,13 @@
 
 ## Windows 使用方式
 
-下载 CI 生成的 `BeijingClaudeTranslator-win.zip`，解压后双击：
+下载：
 
 ```text
-Start-ClockTranslator.vbs
+BeijingClaudeTranslator.exe
 ```
 
-这个启动方式没有黑框终端。
-
-如果需要桌面图标，双击：
-
-```text
-Install-DesktopShortcut.cmd
-```
+双击就能打开，不需要解压，不需要安装。
 
 ## 说明
 
