@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -18,8 +19,8 @@ using System.Windows.Forms;
 [assembly: AssemblyProduct("ClaudeBridge CN")]
 [assembly: AssemblyCompany("QingChen Cloud")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 QingChen Cloud")]
-[assembly: AssemblyVersion("0.4.0.0")]
-[assembly: AssemblyFileVersion("0.4.0.0")]
+[assembly: AssemblyVersion("0.4.1.0")]
+[assembly: AssemblyFileVersion("0.4.1.0")]
 
 namespace BeijingClaudeTranslator
 {
@@ -27,7 +28,7 @@ namespace BeijingClaudeTranslator
     {
         public const string ProductName = "ClaudeBridge CN";
         public const string ChineseName = "Claude 中文桥";
-        public const string Version = "0.4.0";
+        public const string Version = "0.4.1";
         public const string Owner = "qingchencloud";
         public const string Repo = "claude-bridge-cn";
         public const string RepoUrl = "https://github.com/qingchencloud/claude-bridge-cn";
@@ -54,6 +55,27 @@ namespace BeijingClaudeTranslator
                     Console.Error.WriteLine("Smoke test failed.");
                     Environment.Exit(2);
                 }
+                foreach (object item in Translator.GetDirectionNames())
+                {
+                    string direction = Convert.ToString(item);
+                    string directionOutput = Translator.Translate(input, direction);
+                    if (directionOutput != input)
+                    {
+                        Console.Error.WriteLine("Direction smoke failed: " + direction);
+                        Environment.Exit(2);
+                    }
+                }
+                return;
+            }
+            if (args.Length > 0 && args[0].Equals("--update-smoke", StringComparison.OrdinalIgnoreCase))
+            {
+                ReleaseInfo latest = UpdateManager.GetLatestRelease();
+                if (string.IsNullOrWhiteSpace(latest.DownloadUrl))
+                {
+                    Console.Error.WriteLine("Update smoke failed.");
+                    Environment.Exit(3);
+                }
+                Console.WriteLine(latest.Tag + " " + latest.DownloadUrl);
                 return;
             }
 
@@ -121,8 +143,8 @@ namespace BeijingClaudeTranslator
         public MainForm()
         {
             Text = AppInfo.ChineseName;
-            Size = new Size(460, 520);
-            MinimumSize = new Size(420, 460);
+            Size = new Size(520, 540);
+            MinimumSize = new Size(500, 480);
             StartPosition = FormStartPosition.Manual;
             TopMost = true;
             Font = UiFont(9f);
@@ -140,8 +162,8 @@ namespace BeijingClaudeTranslator
                 RowCount = 7,
                 Padding = new Padding(12)
             };
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
@@ -151,7 +173,7 @@ namespace BeijingClaudeTranslator
 
             header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 224));
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 270));
             header.RowStyles.Add(new RowStyle(SizeType.Percent, 64));
             header.RowStyles.Add(new RowStyle(SizeType.Percent, 36));
 
@@ -183,18 +205,19 @@ namespace BeijingClaudeTranslator
 
             toolbar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 1 };
             toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));
-            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));
-            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));
-            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 94));
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 94));
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 76));
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 76));
 
             directionBox = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 Dock = DockStyle.Fill,
-                Font = UiFont(9f)
+                Font = UiFont(9f),
+                Margin = new Padding(0, 4, 8, 4)
             };
-            directionBox.Items.AddRange(new object[] { "自动判断", "中文转英文", "英文转中文" });
+            directionBox.Items.AddRange(Translator.GetDirectionNames());
             directionBox.SelectedIndex = 0;
 
             translateButton = NewButton("开始翻译");
@@ -483,7 +506,8 @@ namespace BeijingClaudeTranslator
             {
                 Text = text,
                 FlatStyle = FlatStyle.Flat,
-                Height = 36,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(4, 4, 0, 4),
                 Font = UiFont(9f),
                 Cursor = Cursors.Hand
             };
@@ -587,9 +611,64 @@ namespace BeijingClaudeTranslator
         }
     }
 
+    internal static class JsonUtil
+    {
+        public static IEnumerable<object> EnumerateArray(object value)
+        {
+            if (value == null) yield break;
+
+            object[] array = value as object[];
+            if (array != null)
+            {
+                foreach (object item in array) yield return item;
+                yield break;
+            }
+
+            IEnumerable enumerable = value as IEnumerable;
+            if (enumerable == null || value is string) yield break;
+
+            foreach (object item in enumerable) yield return item;
+        }
+
+        public static Dictionary<string, object> FirstObject(object value, string errorMessage)
+        {
+            foreach (object item in EnumerateArray(value))
+            {
+                Dictionary<string, object> result = item as Dictionary<string, object>;
+                if (result != null) return result;
+            }
+
+            throw new InvalidOperationException(errorMessage);
+        }
+    }
+
     internal static class Translator
     {
         private const int MaxChunkLength = 260;
+
+        public static object[] GetDirectionNames()
+        {
+            return new object[]
+            {
+                "自动判断",
+                "中文 → 英文",
+                "英文 → 中文",
+                "中文 → 日文",
+                "日文 → 中文",
+                "中文 → 韩文",
+                "韩文 → 中文",
+                "中文 → 西班牙文",
+                "西班牙文 → 中文",
+                "中文 → 法文",
+                "法文 → 中文",
+                "中文 → 德文",
+                "德文 → 中文",
+                "中文 → 俄文",
+                "俄文 → 中文",
+                "中文 → 葡萄牙文",
+                "葡萄牙文 → 中文"
+            };
+        }
 
         public static string Translate(string text, string direction)
         {
@@ -674,10 +753,8 @@ namespace BeijingClaudeTranslator
             string json = ReadResponse(request);
 
             JavaScriptSerializer serializer = new JavaScriptSerializer();
-            object[] root = serializer.Deserialize<object[]>(json);
-            Dictionary<string, object> first = root[0] as Dictionary<string, object>;
-            object[] translations = first["translations"] as object[];
-            Dictionary<string, object> translation = translations[0] as Dictionary<string, object>;
+            Dictionary<string, object> first = JsonUtil.FirstObject(serializer.DeserializeObject(json), "Microsoft Translator 没有返回结果。");
+            Dictionary<string, object> translation = JsonUtil.FirstObject(first["translations"], "Microsoft Translator 没有返回结果。");
             return Convert.ToString(translation["text"]).Trim();
         }
 
@@ -703,24 +780,36 @@ namespace BeijingClaudeTranslator
 
             JavaScriptSerializer serializer = new JavaScriptSerializer();
             Dictionary<string, object> root = serializer.Deserialize<Dictionary<string, object>>(json);
-            object[] translations = root["translations"] as object[];
-            Dictionary<string, object> translation = translations[0] as Dictionary<string, object>;
+            Dictionary<string, object> translation = JsonUtil.FirstObject(root["translations"], "DeepL 没有返回结果。");
             return Convert.ToString(translation["text"]).Trim();
         }
 
         private static DirectionInfo ResolveDirection(string text, string direction)
         {
-            if (direction == "中文转英文")
-            {
-                return new DirectionInfo("zh-CN", "en", "zh-Hans", "en", "ZH", "EN-US");
-            }
-            if (direction == "英文转中文")
-            {
-                return new DirectionInfo("en", "zh-CN", "en", "zh-Hans", "EN", "ZH-HANS");
-            }
+            if (direction == "中文转英文" || direction == "中文 → 英文") return Pair("zh-CN", "en", "zh-Hans", "en", "ZH", "EN-US");
+            if (direction == "英文转中文" || direction == "英文 → 中文") return Pair("en", "zh-CN", "en", "zh-Hans", "EN", "ZH-HANS");
+            if (direction == "中文 → 日文") return Pair("zh-CN", "ja", "zh-Hans", "ja", "ZH", "JA");
+            if (direction == "日文 → 中文") return Pair("ja", "zh-CN", "ja", "zh-Hans", "JA", "ZH-HANS");
+            if (direction == "中文 → 韩文") return Pair("zh-CN", "ko", "zh-Hans", "ko", "ZH", "KO");
+            if (direction == "韩文 → 中文") return Pair("ko", "zh-CN", "ko", "zh-Hans", "KO", "ZH-HANS");
+            if (direction == "中文 → 西班牙文") return Pair("zh-CN", "es", "zh-Hans", "es", "ZH", "ES");
+            if (direction == "西班牙文 → 中文") return Pair("es", "zh-CN", "es", "zh-Hans", "ES", "ZH-HANS");
+            if (direction == "中文 → 法文") return Pair("zh-CN", "fr", "zh-Hans", "fr", "ZH", "FR");
+            if (direction == "法文 → 中文") return Pair("fr", "zh-CN", "fr", "zh-Hans", "FR", "ZH-HANS");
+            if (direction == "中文 → 德文") return Pair("zh-CN", "de", "zh-Hans", "de", "ZH", "DE");
+            if (direction == "德文 → 中文") return Pair("de", "zh-CN", "de", "zh-Hans", "DE", "ZH-HANS");
+            if (direction == "中文 → 俄文") return Pair("zh-CN", "ru", "zh-Hans", "ru", "ZH", "RU");
+            if (direction == "俄文 → 中文") return Pair("ru", "zh-CN", "ru", "zh-Hans", "RU", "ZH-HANS");
+            if (direction == "中文 → 葡萄牙文") return Pair("zh-CN", "pt", "zh-Hans", "pt", "ZH", "PT-PT");
+            if (direction == "葡萄牙文 → 中文") return Pair("pt", "zh-CN", "pt", "zh-Hans", "PT", "ZH-HANS");
             return ProbablyChinese(text)
-                ? new DirectionInfo("zh-CN", "en", "zh-Hans", "en", "ZH", "EN-US")
-                : new DirectionInfo("en", "zh-CN", "en", "zh-Hans", "EN", "ZH-HANS");
+                ? Pair("zh-CN", "en", "zh-Hans", "en", "ZH", "EN-US")
+                : Pair("en", "zh-CN", "en", "zh-Hans", "EN", "ZH-HANS");
+        }
+
+        private static DirectionInfo Pair(string source, string target, string microsoftSource, string microsoftTarget, string deepLSource, string deepLTarget)
+        {
+            return new DirectionInfo(source, target, microsoftSource, microsoftTarget, deepLSource, deepLTarget);
         }
 
         private static bool ProbablyChinese(string text)
@@ -838,7 +927,7 @@ namespace BeijingClaudeTranslator
         public SetupGuideForm()
         {
             Text = "安装引导";
-            Size = new Size(420, 250);
+            Size = new Size(520, 360);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -849,27 +938,38 @@ namespace BeijingClaudeTranslator
             TableLayoutPanel layout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                Padding = new Padding(18),
+                Padding = new Padding(24),
                 ColumnCount = 1,
-                RowCount = 5
+                RowCount = 6
             };
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
             Controls.Add(layout);
 
             Label title = new Label
             {
-                Text = "要安装到本机吗？",
+                Text = "安装 ClaudeBridge CN",
                 Dock = DockStyle.Fill,
-                Font = new Font("Microsoft YaHei UI", 13f, FontStyle.Bold)
+                Font = new Font("Microsoft YaHei UI", 15f, FontStyle.Bold)
             };
             Label desc = new Label
             {
-                Text = "安装后会放到用户目录，并创建启动入口。也可以直接使用，不安装。",
-                Dock = DockStyle.Fill
+                Text = "推荐安装到本机，之后可以从桌面或开始菜单启动。也可以先直接试用。",
+                Dock = DockStyle.Fill,
+                ForeColor = Color.FromArgb(71, 85, 105)
+            };
+            Label info = new Label
+            {
+                Text = "安装位置：当前用户目录\r\n不会修改系统时区\r\n关闭窗口后可留在系统托盘",
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.FixedSingle,
+                Padding = new Padding(10),
+                ForeColor = Color.FromArgb(15, 23, 42),
+                BackColor = Color.FromArgb(248, 250, 252)
             };
             desktopCheck = new CheckBox { Text = "创建桌面图标", Checked = true, AutoSize = true };
             autoStartCheck = new CheckBox { Text = "开机自动启动", Checked = false, AutoSize = true };
@@ -877,18 +977,25 @@ namespace BeijingClaudeTranslator
             FlowLayoutPanel buttons = new FlowLayoutPanel
             {
                 FlowDirection = FlowDirection.RightToLeft,
-                Dock = DockStyle.Fill
+                Dock = DockStyle.Fill,
+                WrapContents = false,
+                Padding = new Padding(0, 8, 0, 0)
             };
-            Button installButton = new Button { Text = "安装并打开", Width = 104, Height = 34 };
-            Button directButton = new Button { Text = "直接使用", Width = 92, Height = 34 };
+            Button installButton = new Button { Text = "安装并打开", Width = 116, Height = 34 };
+            Button directButton = new Button { Text = "直接试用", Width = 92, Height = 34 };
+            Button exitButton = new Button { Text = "退出", Width = 76, Height = 34 };
             buttons.Controls.Add(installButton);
             buttons.Controls.Add(directButton);
+            buttons.Controls.Add(exitButton);
 
             layout.Controls.Add(title, 0, 0);
             layout.Controls.Add(desc, 0, 1);
-            layout.Controls.Add(desktopCheck, 0, 2);
-            layout.Controls.Add(autoStartCheck, 0, 3);
-            layout.Controls.Add(buttons, 0, 4);
+            layout.Controls.Add(info, 0, 2);
+            layout.Controls.Add(desktopCheck, 0, 3);
+            layout.Controls.Add(autoStartCheck, 0, 4);
+            layout.Controls.Add(buttons, 0, 5);
+            AcceptButton = installButton;
+            CancelButton = exitButton;
 
             installButton.Click += delegate
             {
@@ -909,6 +1016,11 @@ namespace BeijingClaudeTranslator
                 DialogResult = DialogResult.OK;
                 Close();
             };
+            exitButton.Click += delegate
+            {
+                DialogResult = DialogResult.Abort;
+                Close();
+            };
         }
     }
 
@@ -920,7 +1032,7 @@ namespace BeijingClaudeTranslator
         public AboutForm(Icon icon)
         {
             Text = "关于";
-            Size = new Size(420, 260);
+            Size = new Size(500, 280);
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -931,38 +1043,48 @@ namespace BeijingClaudeTranslator
             TableLayoutPanel layout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                Padding = new Padding(18),
+                Padding = new Padding(24),
                 ColumnCount = 1,
-                RowCount = 5
+                RowCount = 4
             };
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
             Controls.Add(layout);
 
             Label title = new Label
             {
                 Text = AppInfo.ChineseName,
                 Dock = DockStyle.Fill,
-                Font = new Font("Microsoft YaHei UI", 13f, FontStyle.Bold)
+                Font = new Font("Microsoft YaHei UI", 15f, FontStyle.Bold)
             };
             Label desc = new Label
             {
-                Text = "版本 " + AppInfo.Version + "\r\n给中文 Claude 用户用的时间和中英文小工具。",
-                Dock = DockStyle.Fill
+                Text = "版本 " + AppInfo.Version + "\r\n给中文 Claude 用户用的时间和多语言小工具。",
+                Dock = DockStyle.Fill,
+                ForeColor = Color.FromArgb(71, 85, 105)
             };
-            statusLabel = new Label { Text = "可以检查 GitHub 上的新版本。", Dock = DockStyle.Fill };
+            statusLabel = new Label
+            {
+                Text = "可以检查 GitHub 上的新版本。",
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.FixedSingle,
+                Padding = new Padding(10),
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true
+            };
 
             FlowLayoutPanel buttons = new FlowLayoutPanel
             {
                 FlowDirection = FlowDirection.RightToLeft,
-                Dock = DockStyle.Fill
+                Dock = DockStyle.Fill,
+                WrapContents = false,
+                Padding = new Padding(0, 8, 0, 0)
             };
-            Button closeButton = new Button { Text = "关闭", Width = 76, Height = 34 };
-            Button githubButton = new Button { Text = "GitHub", Width = 76, Height = 34 };
-            updateButton = new Button { Text = "检查更新", Width = 92, Height = 34 };
+            Button closeButton = new Button { Text = "关闭", Width = 90, Height = 34 };
+            Button githubButton = new Button { Text = "GitHub", Width = 90, Height = 34 };
+            updateButton = new Button { Text = "检查更新", Width = 104, Height = 34 };
             buttons.Controls.Add(closeButton);
             buttons.Controls.Add(githubButton);
             buttons.Controls.Add(updateButton);
@@ -971,6 +1093,8 @@ namespace BeijingClaudeTranslator
             layout.Controls.Add(desc, 0, 1);
             layout.Controls.Add(statusLabel, 0, 2);
             layout.Controls.Add(buttons, 0, 3);
+            AcceptButton = updateButton;
+            CancelButton = closeButton;
 
             closeButton.Click += delegate { Close(); };
             githubButton.Click += delegate { Process.Start(AppInfo.RepoUrl); };
@@ -1117,21 +1241,30 @@ namespace BeijingClaudeTranslator
             string tag = Convert.ToString(root["tag_name"]);
             string htmlUrl = root.ContainsKey("html_url") ? Convert.ToString(root["html_url"]) : AppInfo.RepoUrl;
             string downloadUrl = "";
+            List<Dictionary<string, object>> assets = new List<Dictionary<string, object>>();
 
-            object[] assets = root["assets"] as object[];
-            if (assets != null)
+            if (root.ContainsKey("assets"))
             {
-                foreach (object item in assets)
+                foreach (object item in JsonUtil.EnumerateArray(root["assets"]))
                 {
                     Dictionary<string, object> asset = item as Dictionary<string, object>;
                     if (asset == null) continue;
+                    assets.Add(asset);
+                }
+            }
+
+            foreach (string assetName in AppInfo.ReleaseAssetNames)
+            {
+                foreach (Dictionary<string, object> asset in assets)
+                {
                     string name = Convert.ToString(asset["name"]);
-                    if (IsWindowsAsset(name))
+                    if (string.Equals(name, assetName, StringComparison.OrdinalIgnoreCase))
                     {
                         downloadUrl = Convert.ToString(asset["browser_download_url"]);
                         break;
                     }
                 }
+                if (!string.IsNullOrWhiteSpace(downloadUrl)) break;
             }
 
             if (string.IsNullOrWhiteSpace(downloadUrl))
@@ -1140,15 +1273,6 @@ namespace BeijingClaudeTranslator
             }
 
             return new ReleaseInfo(tag, htmlUrl, downloadUrl);
-        }
-
-        private static bool IsWindowsAsset(string name)
-        {
-            foreach (string assetName in AppInfo.ReleaseAssetNames)
-            {
-                if (string.Equals(name, assetName, StringComparison.OrdinalIgnoreCase)) return true;
-            }
-            return false;
         }
 
         public static void DownloadAndRestart(ReleaseInfo release)
