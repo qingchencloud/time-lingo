@@ -20,8 +20,8 @@ using System.Windows.Forms;
 [assembly: AssemblyProduct("TimeLingo")]
 [assembly: AssemblyCompany("QingChen Cloud")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 QingChen Cloud")]
-[assembly: AssemblyVersion("0.5.0.0")]
-[assembly: AssemblyFileVersion("0.5.0.0")]
+[assembly: AssemblyVersion("0.5.1.0")]
+[assembly: AssemblyFileVersion("0.5.1.0")]
 
 namespace BeijingClaudeTranslator
 {
@@ -29,7 +29,7 @@ namespace BeijingClaudeTranslator
     {
         public const string ProductName = "TimeLingo";
         public const string ChineseName = "TimeLingo";
-        public const string Version = "0.5.0";
+        public const string Version = "0.5.1";
         public const string Owner = "qingchencloud";
         public const string Repo = "time-lingo";
         public const string RepoUrl = "https://github.com/qingchencloud/time-lingo";
@@ -155,6 +155,7 @@ namespace BeijingClaudeTranslator
             StartPosition = FormStartPosition.Manual;
             TopMost = true;
             Font = UiFont(9f);
+            darkTheme = AppSettings.DarkTheme;
 
             appIcon = LoadAppIcon();
             Icon = appIcon;
@@ -191,7 +192,10 @@ namespace BeijingClaudeTranslator
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 Dock = DockStyle.Fill,
                 Font = UiFont(8.5f),
-                Margin = new Padding(8, 1, 0, 1)
+                Margin = new Padding(8, 1, 0, 1),
+                FlatStyle = FlatStyle.Flat,
+                DrawMode = DrawMode.OwnerDrawFixed,
+                ItemHeight = 24
             };
 
             switchPanel = new FlowLayoutPanel
@@ -202,7 +206,7 @@ namespace BeijingClaudeTranslator
             };
             topMostCheck = NewCheckBox("置顶", true);
             trayCheck = NewCheckBox("托盘", true);
-            themeCheck = NewCheckBox("夜间", false);
+            themeCheck = NewCheckBox("夜间", AppSettings.DarkTheme);
             autoStartCheck = NewCheckBox("自启", AutoStart.IsEnabled());
             switchPanel.Controls.Add(themeCheck);
             switchPanel.Controls.Add(trayCheck);
@@ -227,7 +231,10 @@ namespace BeijingClaudeTranslator
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 Dock = DockStyle.Fill,
                 Font = UiFont(9f),
-                Margin = new Padding(0, 4, 8, 4)
+                Margin = new Padding(0, 4, 8, 4),
+                FlatStyle = FlatStyle.Flat,
+                DrawMode = DrawMode.OwnerDrawFixed,
+                ItemHeight = 24
             };
             directionBox.Items.AddRange(Translator.GetDirectionOptions());
             directionBox.SelectedIndex = 0;
@@ -313,10 +320,19 @@ namespace BeijingClaudeTranslator
             themeCheck.CheckedChanged += delegate
             {
                 darkTheme = themeCheck.Checked;
+                AppSettings.DarkTheme = darkTheme;
+                AppSettings.Save();
                 ApplyTheme();
             };
             autoStartCheck.CheckedChanged += delegate { ToggleAutoStart(); };
-            timeZoneBox.SelectedIndexChanged += delegate { SaveSelectedTimeZone(); };
+            timeZoneBox.SelectedIndexChanged += delegate
+            {
+                SaveSelectedTimeZone();
+                if (!IsComboDropDownOpen()) UpdateClock(true);
+            };
+            timeZoneBox.DropDownClosed += delegate { UpdateClock(true); };
+            timeZoneBox.DrawItem += DrawComboBoxItem;
+            directionBox.DrawItem += DrawComboBoxItem;
             settingsButton.Click += delegate { ShowSettings(); };
             translateButton.Click += async delegate { await TranslateFromUiAsync(); };
             copyButton.Click += delegate
@@ -351,6 +367,12 @@ namespace BeijingClaudeTranslator
                 Activate();
                 inputBox.Focus();
             };
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            ApplyTitleBarTheme();
         }
 
         private async Task TranslateFromUiAsync()
@@ -509,7 +531,6 @@ namespace BeijingClaudeTranslator
             if (preset == null) return;
             AppSettings.TimeZoneKey = preset.Key;
             AppSettings.Save();
-            UpdateClock();
         }
 
         private void SetBusy(bool busy)
@@ -528,10 +549,21 @@ namespace BeijingClaudeTranslator
 
         private void UpdateClock()
         {
+            UpdateClock(false);
+        }
+
+        private void UpdateClock(bool force)
+        {
             TimeZonePreset preset = TimeZonePreset.Find(AppSettings.TimeZoneKey);
             DateTime now = GetSelectedTimeNow(preset);
+            if (!force && IsComboDropDownOpen()) return;
             timeLabel.Text = now.ToString("HH:mm:ss");
             dateLabel.Text = preset.DisplayName + "  " + now.ToString("yyyy-MM-dd ddd");
+        }
+
+        private bool IsComboDropDownOpen()
+        {
+            return timeZoneBox.DroppedDown || directionBox.DroppedDown;
         }
 
         private DateTime GetSelectedTimeNow(TimeZonePreset preset)
@@ -593,6 +625,31 @@ namespace BeijingClaudeTranslator
             SetButtonTheme(copyButton, false);
             SetButtonTheme(clearButton, false);
             SetButtonTheme(settingsButton, false);
+            SetTrayMenuTheme();
+            ApplyTitleBarTheme();
+            directionBox.Invalidate();
+            timeZoneBox.Invalidate();
+        }
+
+        private void ApplyTitleBarTheme()
+        {
+            if (!IsHandleCreated) return;
+            NativeMethods.SetImmersiveDarkMode(Handle, darkTheme);
+        }
+
+        private void SetTrayMenuTheme()
+        {
+            Color surface = ThemeColor("Surface");
+            Color text = ThemeColor("Text");
+
+            trayMenu.BackColor = surface;
+            trayMenu.ForeColor = text;
+            trayMenu.Renderer = new ToolStripProfessionalRenderer(new MenuColorTable(darkTheme));
+            foreach (ToolStripItem item in trayMenu.Items)
+            {
+                item.BackColor = surface;
+                item.ForeColor = text;
+            }
         }
 
         private Label NewLabel(string text, float size, FontStyle style)
@@ -633,6 +690,36 @@ namespace BeijingClaudeTranslator
             };
         }
 
+        private void DrawComboBoxItem(object sender, DrawItemEventArgs e)
+        {
+            ComboBox combo = sender as ComboBox;
+            if (combo == null || e.Index < 0) return;
+
+            bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            bool disabled = (e.State & DrawItemState.Disabled) == DrawItemState.Disabled;
+            Color back = selected ? ThemeColor("ComboSelected") : ThemeColor("Surface");
+            Color fore = disabled ? ThemeColor("MutedText") : selected ? ThemeColor("ComboSelectedText") : ThemeColor("Text");
+
+            using (SolidBrush brush = new SolidBrush(back))
+            {
+                e.Graphics.FillRectangle(brush, e.Bounds);
+            }
+
+            Rectangle textBounds = new Rectangle(e.Bounds.Left + 8, e.Bounds.Top, e.Bounds.Width - 12, e.Bounds.Height);
+            TextRenderer.DrawText(
+                e.Graphics,
+                combo.Items[e.Index].ToString(),
+                combo.Font,
+                textBounds,
+                fore,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+
+            if ((e.State & DrawItemState.Focus) == DrawItemState.Focus && !darkTheme)
+            {
+                e.DrawFocusRectangle();
+            }
+        }
+
         private void SetButtonTheme(Button button, bool primary)
         {
             if (primary)
@@ -658,18 +745,20 @@ namespace BeijingClaudeTranslator
             {
                 switch (name)
                 {
-                    case "Background": return Color.FromArgb(15, 23, 42);
-                    case "Surface": return Color.FromArgb(30, 41, 59);
-                    case "SurfaceAlt": return Color.FromArgb(17, 24, 39);
-                    case "Text": return Color.FromArgb(248, 250, 252);
-                    case "MutedText": return Color.FromArgb(203, 213, 225);
-                    case "Border": return Color.FromArgb(71, 85, 105);
+                    case "Background": return Color.FromArgb(11, 18, 32);
+                    case "Surface": return Color.FromArgb(20, 31, 48);
+                    case "SurfaceAlt": return Color.FromArgb(16, 25, 40);
+                    case "Text": return Color.FromArgb(241, 245, 249);
+                    case "MutedText": return Color.FromArgb(186, 199, 219);
+                    case "Border": return Color.FromArgb(74, 89, 111);
                     case "Primary": return Color.FromArgb(59, 130, 246);
                     case "PrimaryHover": return Color.FromArgb(37, 99, 235);
                     case "PrimaryDown": return Color.FromArgb(29, 78, 216);
-                    case "Button": return Color.FromArgb(30, 41, 59);
-                    case "ButtonHover": return Color.FromArgb(51, 65, 85);
-                    case "ButtonDown": return Color.FromArgb(71, 85, 105);
+                    case "Button": return Color.FromArgb(20, 31, 48);
+                    case "ButtonHover": return Color.FromArgb(31, 45, 67);
+                    case "ButtonDown": return Color.FromArgb(47, 64, 89);
+                    case "ComboSelected": return Color.FromArgb(37, 99, 235);
+                    case "ComboSelectedText": return Color.White;
                     case "Danger": return Color.FromArgb(248, 113, 113);
                     case "Warn": return Color.FromArgb(251, 146, 60);
                 }
@@ -689,6 +778,8 @@ namespace BeijingClaudeTranslator
                 case "Button": return Color.White;
                 case "ButtonHover": return Color.FromArgb(241, 245, 249);
                 case "ButtonDown": return Color.FromArgb(226, 232, 240);
+                case "ComboSelected": return Color.FromArgb(37, 99, 235);
+                case "ComboSelectedText": return Color.White;
                 case "Danger": return Color.FromArgb(220, 38, 38);
                 case "Warn": return Color.FromArgb(234, 88, 12);
                 default: return Color.Black;
@@ -715,6 +806,71 @@ namespace BeijingClaudeTranslator
             {
                 return SystemIcons.Application;
             }
+        }
+    }
+
+    internal sealed class MenuColorTable : ProfessionalColorTable
+    {
+        private readonly bool dark;
+
+        public MenuColorTable(bool dark)
+        {
+            this.dark = dark;
+        }
+
+        public override Color ToolStripDropDownBackground
+        {
+            get { return dark ? Color.FromArgb(20, 31, 48) : Color.White; }
+        }
+
+        public override Color ImageMarginGradientBegin
+        {
+            get { return ToolStripDropDownBackground; }
+        }
+
+        public override Color ImageMarginGradientMiddle
+        {
+            get { return ToolStripDropDownBackground; }
+        }
+
+        public override Color ImageMarginGradientEnd
+        {
+            get { return ToolStripDropDownBackground; }
+        }
+
+        public override Color MenuBorder
+        {
+            get { return dark ? Color.FromArgb(74, 89, 111) : Color.FromArgb(203, 213, 225); }
+        }
+
+        public override Color MenuItemBorder
+        {
+            get { return dark ? Color.FromArgb(59, 130, 246) : Color.FromArgb(37, 99, 235); }
+        }
+
+        public override Color MenuItemSelected
+        {
+            get { return dark ? Color.FromArgb(31, 45, 67) : Color.FromArgb(241, 245, 249); }
+        }
+
+        public override Color MenuItemSelectedGradientBegin
+        {
+            get { return MenuItemSelected; }
+        }
+
+        public override Color MenuItemSelectedGradientEnd
+        {
+            get { return MenuItemSelected; }
+        }
+
+        public override Color MenuItemPressedGradientBegin
+        {
+            get { return MenuItemSelected; }
+        }
+
+        public override Color MenuItemPressedGradientEnd
+        {
+            get { return MenuItemSelected; }
         }
     }
 
@@ -767,6 +923,7 @@ namespace BeijingClaudeTranslator
         public static string UiLanguage = DetectDefaultLanguage();
         public static string TimeZoneKey = "beijing";
         public static string DefaultTargetLanguageKey = "en";
+        public static bool DarkTheme = false;
 
         public static void Load()
         {
@@ -782,6 +939,7 @@ namespace BeijingClaudeTranslator
                 if (key == "ui_language") UiLanguage = value;
                 if (key == "time_zone") TimeZoneKey = value;
                 if (key == "default_target_language") DefaultTargetLanguageKey = value;
+                if (key == "dark_theme") DarkTheme = value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase);
             }
 
             if (LanguageInfo.Find(DefaultTargetLanguageKey) == null) DefaultTargetLanguageKey = "en";
@@ -796,7 +954,8 @@ namespace BeijingClaudeTranslator
             string content =
                 "ui_language=" + UiLanguage + "\r\n" +
                 "time_zone=" + TimeZoneKey + "\r\n" +
-                "default_target_language=" + DefaultTargetLanguageKey + "\r\n";
+                "default_target_language=" + DefaultTargetLanguageKey + "\r\n" +
+                "dark_theme=" + (DarkTheme ? "1" : "0") + "\r\n";
             File.WriteAllText(path, content, Encoding.UTF8);
         }
 
@@ -1913,6 +2072,8 @@ namespace BeijingClaudeTranslator
     internal static class NativeMethods
     {
         public const int SW_RESTORE = 9;
+        private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+        private const int DWMWA_USE_IMMERSIVE_DARK_MODE_OLD = 19;
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
@@ -1922,5 +2083,27 @@ namespace BeijingClaudeTranslator
 
         [DllImport("user32.dll")]
         public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int pvAttribute, int cbAttribute);
+
+        public static void SetImmersiveDarkMode(IntPtr handle, bool enabled)
+        {
+            if (handle == IntPtr.Zero) return;
+
+            try
+            {
+                int value = enabled ? 1 : 0;
+                int result = DwmSetWindowAttribute(handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref value, Marshal.SizeOf(typeof(int)));
+                if (result != 0)
+                {
+                    DwmSetWindowAttribute(handle, DWMWA_USE_IMMERSIVE_DARK_MODE_OLD, ref value, Marshal.SizeOf(typeof(int)));
+                }
+            }
+            catch
+            {
+                // Older Windows builds can ignore this without affecting the app.
+            }
+        }
     }
 }
